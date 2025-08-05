@@ -23,7 +23,40 @@ export default function SimpleAROverlay({ isActive, onClose }) {
     catchGhost,
     movementPatterns,
   } = useGhostGame();
+  const getWorldGhost = (ghost) => {
+    if (!supported || ghost.type !== "spatial-fixed") return ghost;
 
+    // 현재 바라보는 방향과 유령 방향의 차이
+    const alphaDiff = (ghost.worldAlpha - orientation.alpha + 360) % 360;
+    const normalizedAlpha = alphaDiff > 180 ? alphaDiff - 360 : alphaDiff;
+
+    const betaDiff = ghost.worldBeta - orientation.beta;
+
+    // 시야각 밖이면 숨김
+    if (
+      Math.abs(normalizedAlpha) > ghost.viewAngle ||
+      Math.abs(betaDiff) > ghost.viewAngle
+    ) {
+      return { ...ghost, pos: { x: -100, y: -100 } };
+    }
+
+    // ✅ 가상 공간 좌표를 화면 좌표로 변환
+    // 중앙(50,50)을 기준으로 각도 차이에 따라 위치 계산
+    const screenX = 50 + (normalizedAlpha / ghost.viewAngle) * 40; // ±40% 범위
+    const screenY = 50 + (betaDiff / ghost.viewAngle) * 40; // ±40% 범위
+
+    // 거리에 따른 크기 조정
+    const distanceScale = Math.max(0.5, 3.0 / ghost.worldDistance);
+
+    return {
+      ...ghost,
+      pos: {
+        x: Math.max(10, Math.min(90, screenX)),
+        y: Math.max(10, Math.min(90, screenY)),
+      },
+      size: ghost.size * distanceScale, // 거리에 따라 크기 변화
+    };
+  };
   // ✅ 회전 기반 유령 위치 계산 함수 추가
   const getRotatedGhost = (ghost, index) => {
     if (!supported || ghost.type !== "orientation-fixed") return ghost;
@@ -210,7 +243,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
       {/* ✅ 회전 기반 Ghost 렌더링 */}
       {ghosts.map((gh, i) => {
-        const rotatedGhost = getRotatedGhost(gh, i);
+        const rotatedGhost = getWorldGhost(gh, i);
         return (
           <Ghost
             key={`ghost-${i}`}

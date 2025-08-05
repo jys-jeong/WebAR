@@ -26,12 +26,12 @@ export default function useGhostGame() {
     const newGhosts = [
       {
         ...createRandomGhost(),
-        type: "orientation-fixed",
-        targetAlpha: 90, // 동쪽(90°)에서
-        targetBeta: 15, // 앞으로 기울일 때(15°)
-        targetX: 25, // 화면 왼쪽(25%)에
-        targetY: 30, // 화면 위쪽(30%)에 나타남
-        tolerance: 10, // ±10도 오차
+        type: "spatial-fixed",
+        // ✅ 가상 공간에서의 절대 위치 (극좌표)
+        worldAlpha: 90, // 동쪽 방향
+        worldBeta: 0, // 수평
+        worldDistance: 2.0, // 2미터 거리
+        viewAngle: 30, // ±30도 시야각에서 보임
       },
       // 🎯 Type A: 특정 각도에서만 보이는 고정 유령
       {
