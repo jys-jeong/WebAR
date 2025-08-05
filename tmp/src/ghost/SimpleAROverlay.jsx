@@ -1,7 +1,8 @@
 // components/SimpleAROverlay.jsx
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import useGhostGame from "./useGhostGame";
 import useDeviceOrientation from "./useDeviceOrientation";
+import useGeoLocation from "./useGeoLocation"; // ✅ GPS 훅 추가
 import Ghost from "./Ghost";
 import ScorePanel from "./ScorePanel";
 
@@ -11,8 +12,11 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   const videoRef = useRef(null);
   const lastStepRef = useRef([]);
 
-  // ✅ 회전 감지 추가
+  // ✅ 회전 감지 + GPS 위치
   const { orientation, supported } = useDeviceOrientation();
+  const { location } = useGeoLocation();
+
+  const [lastLocation, setLastLocation] = useState(null);
 
   const {
     ghosts,
@@ -23,79 +27,84 @@ export default function SimpleAROverlay({ isActive, onClose }) {
     catchGhost,
     movementPatterns,
   } = useGhostGame();
-  const getSpatialGhost = (ghost, index) => {
-    if (!supported || ghost.type !== "spatial-fixed") return ghost;
 
-    // 사용자가 바라보는 방향과 유령이 있는 방향의 차이
-    const viewerAlpha = orientation.alpha;
-    const viewerBeta = orientation.beta;
-
-    // 유령 방향으로부터의 각도 차이 계산
-    let alphaDiff = ghost.worldAlpha - viewerAlpha;
-    if (alphaDiff > 180) alphaDiff -= 360;
-    if (alphaDiff < -180) alphaDiff += 360;
-
-    const betaDiff = ghost.worldBeta - viewerBeta;
-
-    // 시야각 범위 (±45도)
-    const fieldOfView = 45;
-
-    // 시야각 밖이면 보이지 않음
-    if (Math.abs(alphaDiff) > fieldOfView || Math.abs(betaDiff) > fieldOfView) {
-      return { ...ghost, pos: { x: -100, y: -100 } };
-    }
-
-    // ✅ 가상 공간 좌표를 화면 좌표로 변환
-    // 중앙을 기준으로 각도 차이에 따라 위치 결정
-    const screenX = 50 + (alphaDiff / fieldOfView) * 40; // -40% ~ +40%
-    const screenY = 50 - (betaDiff / fieldOfView) * 40; // -40% ~ +40% (Y축 반전)
-
-    // 거리에 따른 크기 조정
-    const sizeScale = Math.max(0.3, 2.0 / ghost.worldDistance);
-
-    console.log(
-      `유령 위치: 화면 (${screenX.toFixed(1)}, ${screenY.toFixed(1)})`
-    );
-
-    return {
-      ...ghost,
-      pos: {
-        x: Math.max(5, Math.min(95, screenX)),
-        y: Math.max(5, Math.min(95, screenY)),
-      },
-      size: ghost.size * sizeScale,
-    };
-  };
-  // ✅ 회전 기반 유령 위치 계산 함수 추가
-  const getRotatedGhost = (ghost, index) => {
-    if (!supported || ghost.type !== "orientation-fixed") return ghost;
-
-    const alphaDiff = Math.min(
-      Math.abs(orientation.alpha - ghost.targetAlpha),
-      360 - Math.abs(orientation.alpha - ghost.targetAlpha)
-    );
-    const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
-
-    const inView = alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
-
-    if (!inView) {
-      return { ...ghost, pos: { x: -100, y: -100 } };
-    }
-
-    // ✅ 목표 각도에 도달하면 특정 위치에 고정
-    return {
-      ...ghost,
-      pos: {
-        x: ghost.targetX, // 미리 설정된 고정 X 위치
-        y: ghost.targetY, // 미리 설정된 고정 Y 위치
-      },
-    };
+  // ✅ GPS 거리 계산 함수
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000; // 지구 반지름 (미터)
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
-  // AR 열릴 때 게임 리셋
+  // ✅ 3가지 타입 유령 처리 함수 (확장)
+  const getProcessedGhost = (ghost, index) => {
+    if (!supported) return ghost;
+
+    if (ghost.type === "gps-fixed" && location) {
+      const distance = calculateDistance(
+        location.latitude,
+        location.longitude,
+        ghost.gpsLat,
+        ghost.gpsLon
+      );
+
+      console.log(
+        `👻 유령 ${index} (${ghost.title}): 거리 ${distance.toFixed(
+          0
+        )}m, 최대거리 ${ghost.maxVisibleDistance}m`
+      );
+
+      const maxDistance = ghost.maxVisibleDistance || 100;
+      if (distance > maxDistance) {
+        console.log(`❌ 유령 ${index} 너무 멀어서 숨김`);
+        return { ...ghost, pos: { x: -100, y: -100 } };
+      }
+
+      console.log(`✅ 유령 ${index} 표시됨`);
+      const sizeScale = Math.max(0.3, 50 / Math.max(distance, 5));
+
+      return {
+        ...ghost,
+        size: ghost.size * sizeScale,
+        distance: Math.round(distance),
+        opacity: Math.max(0.4, 1 - distance / maxDistance),
+      };
+    }
+
+    // 다른 타입들...
+    return ghost;
+  };
+
+  // ✅ GPS 위치 확보 시 새 게임 시작
   useEffect(() => {
-    if (isActive) resetGame();
-  }, [isActive, resetGame]);
+    if (!location || !isActive) return;
+
+    // 처음 위치를 얻었거나, 500m 이상 이동했을 때
+    if (
+      !lastLocation ||
+      calculateDistance(
+        lastLocation.latitude,
+        lastLocation.longitude,
+        location.latitude,
+        location.longitude
+      ) > 500
+    ) {
+      console.log("🌍 GPS 위치 기반 게임 시작:", location);
+      resetGame(location); // 현재 위치를 resetGame에 전달
+      setLastLocation(location);
+    }
+  }, [location, isActive, resetGame, lastLocation]);
+
+  // AR 열릴 때 기본 게임 리셋 (GPS 없을 때)
+  useEffect(() => {
+    if (isActive && !location) {
+      resetGame();
+    }
+  }, [isActive, location, resetGame]);
 
   // 카메라 설정
   useEffect(() => {
@@ -116,7 +125,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
   }, [isActive]);
 
-  // 실시간 움직임 로직 (기존 코드 그대로 유지)
+  // 실시간 움직임 로직 (Type B만 움직임)
   useEffect(() => {
     if (!isActive || ghosts.length === 0) return;
 
@@ -124,8 +133,9 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
     const timers = ghosts
       .map((gh, index) => {
-        // 🎯 고정 유령은 움직이지 않음
-        if (gh.type === "orientation-fixed") return null;
+        // 🎯📍 고정 유령들은 움직이지 않음
+        if (gh.type === "orientation-fixed" || gh.type === "gps-fixed")
+          return null;
 
         return setInterval(() => {
           console.log(`Moving ghost ${index}`);
@@ -134,17 +144,19 @@ export default function SimpleAROverlay({ isActive, onClose }) {
             const newGhosts = [...prevGhosts];
             if (
               !newGhosts[index] ||
-              newGhosts[index].type === "orientation-fixed"
+              newGhosts[index].type === "orientation-fixed" ||
+              newGhosts[index].type === "gps-fixed"
             )
               return prevGhosts;
 
-            // 기존 움직임 로직 그대로...
+            // 움직임 패턴 (기존 코드 그대로)
             const pattern =
               movementPatterns[
                 Math.floor(Math.random() * movementPatterns.length)
               ];
             let { x, y } = newGhosts[index].pos;
             const now = Date.now();
+
             switch (pattern) {
               case "random-jump":
                 x = Math.random() * 80 + 10;
@@ -250,14 +262,45 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
 
-      {/* ✅ 회전 기반 Ghost 렌더링 */}
+      {/* ✅ 3가지 타입 유령 렌더링 */}
       {ghosts.map((gh, i) => {
-        const rotatedGhost = getSpatialGhost(gh, i);
-        if (rotatedGhost.pos.x < 0) return null;
+        const processedGhost = getProcessedGhost(gh, i);
+
+        // GPS 유령에 거리 표시
+        if (processedGhost.distance !== undefined && processedGhost.pos.x > 0) {
+          return (
+            <div key={`ghost-wrapper-${i}`} style={{ position: "relative" }}>
+              <Ghost
+                gh={processedGhost}
+                idx={i}
+                onClick={() => catchGhost(i)}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${processedGhost.pos.x}%`,
+                  top: `${processedGhost.pos.y - 5}%`,
+                  transform: "translate(-50%, -100%)",
+                  background: "rgba(255,215,0,0.9)",
+                  color: "black",
+                  padding: "2px 6px",
+                  borderRadius: "10px",
+                  fontSize: "10px",
+                  fontWeight: "bold",
+                  zIndex: 25 + i,
+                  pointerEvents: "none",
+                }}
+              >
+                📍 {processedGhost.distance}m
+              </div>
+            </div>
+          );
+        }
+
         return (
           <Ghost
             key={`ghost-${i}`}
-            gh={rotatedGhost}
+            gh={processedGhost}
             idx={i}
             onClick={() => catchGhost(i)}
           />
@@ -265,8 +308,59 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       })}
 
       <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
+      {ghosts.map((gh, i) => {
+        const processedGhost = getProcessedGhost(gh, i);
 
-      {/* ✅ 회전 정보 표시 (디버깅용) */}
+        console.log(
+          `🎨 렌더링 ${i}: 타입=${gh.type}, 위치=(${processedGhost.pos.x}, ${processedGhost.pos.y})`
+        );
+
+        if (processedGhost.pos.x < 0) {
+          console.log(`🚫 유령 ${i} 화면 밖이라 렌더링 안함`);
+          return null;
+        }
+
+        // GPS 유령 거리 표시
+        if (processedGhost.distance !== undefined && processedGhost.pos.x > 0) {
+          return (
+            <div key={`ghost-wrapper-${i}`} style={{ position: "relative" }}>
+              <Ghost
+                gh={processedGhost}
+                idx={i}
+                onClick={() => catchGhost(i)}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${processedGhost.pos.x}%`,
+                  top: `${processedGhost.pos.y - 5}%`,
+                  transform: "translate(-50%, -100%)",
+                  background: "rgba(255,215,0,0.9)",
+                  color: "black",
+                  padding: "2px 6px",
+                  borderRadius: "10px",
+                  fontSize: "10px",
+                  fontWeight: "bold",
+                  zIndex: 25 + i,
+                  pointerEvents: "none",
+                }}
+              >
+                📍 {processedGhost.distance}m
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <Ghost
+            key={`ghost-${i}`}
+            gh={processedGhost}
+            idx={i}
+            onClick={() => catchGhost(i)}
+          />
+        );
+      })}
+      {/* ✅ GPS + 회전 정보 표시 */}
       {supported && (
         <div
           style={{
@@ -286,23 +380,28 @@ export default function SimpleAROverlay({ isActive, onClose }) {
             🧭 현재: α={Math.round(orientation.alpha)}° β=
             {Math.round(orientation.beta)}°
           </div>
-          {supported && (
-            <div
-              style={
-                {
-                  /* 스타일 */
-                }
-              }
-            >
-              <div>🧭 바라보는 방향: {Math.round(orientation.alpha)}°</div>
-              <div>📱 기울기: {Math.round(orientation.beta)}°</div>
-              <hr />
-              <div style={{ color: "#ff6b6b", fontSize: "10px" }}>
-                👻 유령은 동쪽(90°) 위쪽(15°) 3m 지점에 있습니다
-                <br />그 방향을 바라보세요!
+
+          {/* GPS 정보 */}
+          {location ? (
+            <>
+              <hr style={{ margin: "6px 0", border: "1px solid #555" }} />
+              <div style={{ color: "#4CAF50", fontSize: "10px" }}>
+                📍 위치: {location.latitude.toFixed(6)},{" "}
+                {location.longitude.toFixed(6)}
+                <br />
+                🎯 정확도: {location.accuracy?.toFixed(0)}m
               </div>
-            </div>
+            </>
+          ) : (
+            <>
+              <hr style={{ margin: "6px 0", border: "1px solid #555" }} />
+              <div style={{ color: "#FFA726", fontSize: "10px" }}>
+                📍 GPS 위치 확인 중...
+              </div>
+            </>
           )}
+
+          {/* 회전 감지 유령 정보 */}
           {ghosts.find((g) => g.type === "orientation-fixed") && (
             <>
               <hr style={{ margin: "6px 0", border: "1px solid #555" }} />
@@ -323,9 +422,103 @@ export default function SimpleAROverlay({ isActive, onClose }) {
               </div>
             </>
           )}
+
+          {/* GPS 유령 정보 */}
+          {ghosts.find((g) => g.type === "gps-fixed") && (
+            <>
+              <hr style={{ margin: "6px 0", border: "1px solid #555" }} />
+              <div style={{ color: "#FFD700" }}>
+                🌍 GPS 유령:{" "}
+                {ghosts.filter((g) => g.type === "gps-fixed").length}마리
+              </div>
+            </>
+          )}
         </div>
       )}
+      {/* ✅ 근처 유령 방향 안내 (기존 디버그 패널 아래에 추가) */}
+      {location && ghosts.filter((g) => g.type === "gps-fixed").length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 120,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(0,0,0,0.85)",
+            color: "white",
+            padding: "15px",
+            borderRadius: "15px",
+            textAlign: "center",
+            fontSize: "12px",
+            zIndex: 60,
+            minWidth: "250px",
+            border: "2px solid #FFD700",
+          }}
+        >
+          <div
+            style={{
+              color: "#FFD700",
+              fontWeight: "bold",
+              marginBottom: "10px",
+            }}
+          >
+            🗺️ 주변 유령 위치
+          </div>
+          {ghosts
+            .filter((g) => g.type === "gps-fixed")
+            .slice(0, 3)
+            .map((gh, i) => {
+              const distance = calculateDistance(
+                location.latitude,
+                location.longitude,
+                gh.gpsLat,
+                gh.gpsLon
+              );
 
+              // 방향 계산 (8방위)
+              const dLat = gh.gpsLat - location.latitude;
+              const dLon = gh.gpsLon - location.longitude;
+              const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI;
+              const normalizedBearing = (bearing + 360) % 360;
+              const directions = [
+                "북",
+                "북동",
+                "동",
+                "남동",
+                "남",
+                "남서",
+                "서",
+                "북서",
+              ];
+              const directionIndex = Math.round(normalizedBearing / 45) % 8;
+              const direction = directions[directionIndex];
+
+              return (
+                <div
+                  key={i}
+                  style={{
+                    margin: "6px 0",
+                    padding: "4px 8px",
+                    borderRadius: "8px",
+                    backgroundColor:
+                      distance < 80
+                        ? "rgba(76, 175, 80, 0.3)"
+                        : "rgba(255, 167, 38, 0.3)",
+                    color: distance < 80 ? "#4CAF50" : "#FFA726",
+                  }}
+                >
+                  👻 <strong>{direction}</strong> 방향{" "}
+                  <strong>{Math.round(distance)}m</strong>
+                  {distance < 50 && (
+                    <span style={{ color: "#4CAF50" }}> 🔥 가까움!</span>
+                  )}
+                </div>
+              );
+            })}
+          <div style={{ fontSize: "10px", color: "#ccc", marginTop: "8px" }}>
+            🚶‍♂️ 해당 방향으로 이동하면서 유령을 찾아보세요!
+          </div>
+        </div>
+      )}
       {/* ✅ 권한 요청 버튼 (iOS용) */}
       {!supported && (
         <button

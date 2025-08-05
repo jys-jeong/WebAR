@@ -18,57 +18,67 @@ export default function useGhostGame() {
   const [score, setScore] = useState(0);
   const [totalCaught, setTotalCaught] = useState(0);
 
-  // ✅ 두 타입 유령 생성
-  const resetGame = useCallback(() => {
-    const fixedTargetAlpha = Math.random() * 360; // 0~360도
-    const fixedTargetBeta = (Math.random() - 0.5) * 60; // -30~30도
+  // ✅ 현재 위치 기반 유령 생성
+  const resetGame = useCallback((userLocation) => {
+    let newGhosts = [];
 
-    const newGhosts = [
-      // 🎯 Type A: 특정 각도에서만 보이는 고정 유령
-      //   {
-      //     ...createRandomGhost(),
-      //     type: "orientation-fixed",
-      //     targetAlpha: fixedTargetAlpha, // 동쪽(90°)에서
-      //     targetBeta: fixedTargetBeta, // 앞으로 기울일 때(15°)
-      //     targetX: 25, // 화면 왼쪽(25%)에
-      //     targetY: 30, // 화면 위쪽(30%)에 나타남
-      //     tolerance: 30 // ±10도 오차
-      //   },
-      {
-        ...createRandomGhost(),
-        type: "spatial-fixed",
-        // ✅ 가상 공간에서의 절대 위치 (실제 그 자리에 있음)
-        worldAlpha: 30, // 동쪽 방향에 고정
-        worldBeta: 15, // 약간 위쪽에 고정
-        worldDistance: 3, // 3미터 거리에 고정
-        // 화면 좌표가 아닌 실제 공간 좌표
-      },
-      //   {
-      //     ...createRandomGhost(),
-      //     type: "orientation-fixed",
-      //     targetAlpha: fixedTargetAlpha,
-      //     targetBeta: fixedTargetBeta,
-      //     tolerance: 15, // ±15도 허용 오차
-      //   },
-      // 👻 Type B: 항상 보이는 움직이는 유령
-      {
-        ...createRandomGhost(),
-        type: "always-visible",
-      },
-    ];
+    if (userLocation) {
+      // ✅ 강제로 3마리 생성하도록 수정
+      const numGpsGhosts = 3; // 랜덤 대신 고정
+      console.log("🎯 GPS 유령 생성 개수:", numGpsGhosts);
+
+      for (let i = 0; i < numGpsGhosts; i++) {
+        const distance = 60 + i * 20; // 60m, 80m, 100m
+        const angle = i * 120; // 0도, 120도, 240도
+
+        const latOffset =
+          (distance * Math.cos((angle * Math.PI) / 180)) / 111000;
+        const lonOffset =
+          (distance * Math.sin((angle * Math.PI) / 180)) /
+          (111000 * Math.cos((userLocation.latitude * Math.PI) / 180));
+
+        const ghost = {
+          ...createRandomGhost(),
+          type: "gps-fixed",
+          gpsLat: userLocation.latitude + latOffset,
+          gpsLon: userLocation.longitude + lonOffset,
+          maxVisibleDistance: 120, // 거리 여유있게
+          title: `GPS유령${i + 1}`,
+          targetDistance: distance,
+        };
+
+        newGhosts.push(ghost);
+        console.log(`👻 GPS 유령 ${i + 1} 생성:`, distance + "m", angle + "도");
+      }
+    }
+
+    // 다른 타입 추가
+    newGhosts.push({
+      ...createRandomGhost(),
+      type: "orientation-fixed",
+      targetAlpha: Math.random() * 360,
+      targetBeta: (Math.random() - 0.5) * 60,
+      tolerance: 30,
+    });
+
+    newGhosts.push({
+      ...createRandomGhost(),
+      type: "always-visible",
+    });
+
+    console.log("🎮 전체 유령 배열:", newGhosts);
+    console.log("📊 유령 타입별 개수:", {
+      gps: newGhosts.filter((g) => g.type === "gps-fixed").length,
+      orientation: newGhosts.filter((g) => g.type === "orientation-fixed")
+        .length,
+      visible: newGhosts.filter((g) => g.type === "always-visible").length,
+    });
 
     setGhosts(newGhosts);
     setScore(0);
     setTotalCaught(0);
-
-    console.log(
-      `🎯 목표 각도: α=${fixedTargetAlpha.toFixed(
-        0
-      )}°, β=${fixedTargetBeta.toFixed(0)}°`
-    );
   }, []);
 
-  // 나머지 함수들은 그대로 유지
   const catchGhost = (index) => {
     setGhosts((prev) =>
       prev.map((gh, i) => (i === index ? { ...gh, anim: true } : gh))
