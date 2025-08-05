@@ -1,7 +1,7 @@
 // components/SimpleAROverlay.jsx
 import React, { useEffect, useRef } from "react";
 import useGhostGame from "./useGhostGame";
-import useDeviceOrientation from "./useDeviceOrientation"; 
+import useDeviceOrientation from "./useDeviceOrientation";
 import Ghost from "./Ghost";
 import ScorePanel from "./ScorePanel";
 
@@ -10,7 +10,7 @@ const TICK = 100;
 export default function SimpleAROverlay({ isActive, onClose }) {
   const videoRef = useRef(null);
   const lastStepRef = useRef([]);
-  
+
   // ✅ 회전 감지 추가
   const { orientation, supported } = useDeviceOrientation();
 
@@ -28,37 +28,27 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   const getRotatedGhost = (ghost, index) => {
     if (!supported) return ghost;
 
-    // 각 유령마다 다른 기준 방향 설정 (0~360도)
-    const baseDirection = (index * 60) % 360;
-    const currentDirection = orientation.alpha;
-    
-    // 현재 방향과 유령 기준 방향의 차이 계산
-    let angleDiff = ((baseDirection - currentDirection + 360) % 360);
-    if (angleDiff > 180) angleDiff = 360 - angleDiff;
-    
-    // 시야각 내에 있는지 확인 (±60도)
-    const inView = angleDiff <= 60;
-    
-    if (!inView) {
-      // 화면 밖으로 이동
-      return { 
-        ...ghost, 
-        pos: { x: -100, y: -100 }
-      };
+    // 🎯 Type A: orientation-fixed만 특별 처리
+    if (ghost.type === "orientation-fixed") {
+      const alphaDiff = Math.min(
+        Math.abs(orientation.alpha - ghost.targetAlpha),
+        360 - Math.abs(orientation.alpha - ghost.targetAlpha)
+      );
+      const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
+
+      // 목표 각도 범위 내에 있는지 확인
+      const inView =
+        alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
+
+      if (!inView) {
+        return { ...ghost, pos: { x: -100, y: -100 } }; // 숨김
+      }
+
+      return ghost; // 위치 고정
     }
 
-    // 회전에 따른 위치 보정
-    const rotationOffset = (currentDirection - baseDirection) * 0.2;
-    const adjustedX = Math.max(5, Math.min(95, ghost.pos.x + rotationOffset));
-    const adjustedY = ghost.pos.y + Math.sin(orientation.beta * Math.PI / 180) * 5;
-
-    return {
-      ...ghost,
-      pos: {
-        x: adjustedX,
-        y: Math.max(5, Math.min(95, adjustedY))
-      }
-    };
+    // 👻 Type B: always-visible은 그대로 표시
+    return ghost;
   };
 
   // AR 열릴 때 게임 리셋
@@ -91,96 +81,105 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
     console.log("Starting movement for", ghosts.length, "ghosts");
 
-    const timers = ghosts.map((gh, index) => {
-      return setInterval(() => {
-        console.log(`Moving ghost ${index}`);
+    const timers = ghosts
+      .map((gh, index) => {
+        // 🎯 고정 유령은 움직이지 않음
+        if (gh.type === "orientation-fixed") return null;
 
-        setGhosts((prevGhosts) => {
-          const newGhosts = [...prevGhosts];
-          if (!newGhosts[index]) return prevGhosts;
+        return setInterval(() => {
+          console.log(`Moving ghost ${index}`);
 
-          const pattern =
-            movementPatterns[
-              Math.floor(Math.random() * movementPatterns.length)
-            ];
-          let { x, y } = newGhosts[index].pos;
-          const now = Date.now();
+          setGhosts((prevGhosts) => {
+            const newGhosts = [...prevGhosts];
+            if (
+              !newGhosts[index] ||
+              newGhosts[index].type === "orientation-fixed"
+            )
+              return prevGhosts;
 
-          switch (pattern) {
-            case "random-jump":
-              x = Math.random() * 80 + 10;
-              y = Math.random() * 80 + 10;
-              break;
+            // 기존 움직임 로직 그대로...
+            const pattern =
+              movementPatterns[
+                Math.floor(Math.random() * movementPatterns.length)
+              ];
+            let { x, y } = newGhosts[index].pos;
+            const now = Date.now();
+            switch (pattern) {
+              case "random-jump":
+                x = Math.random() * 80 + 10;
+                y = Math.random() * 80 + 10;
+                break;
 
-            case "smooth-slide":
-              x = Math.max(10, Math.min(90, x + (Math.random() - 0.5) * 25));
-              y = Math.max(10, Math.min(90, y + (Math.random() - 0.5) * 25));
-              break;
+              case "smooth-slide":
+                x = Math.max(10, Math.min(90, x + (Math.random() - 0.5) * 25));
+                y = Math.max(10, Math.min(90, y + (Math.random() - 0.5) * 25));
+                break;
 
-            case "circular":
-              const angle = now * 0.002 + index;
-              x = 50 + Math.cos(angle) * 25;
-              y = 50 + Math.sin(angle) * 25;
-              break;
+              case "circular":
+                const angle = now * 0.002 + index;
+                x = 50 + Math.cos(angle) * 25;
+                y = 50 + Math.sin(angle) * 25;
+                break;
 
-            case "zigzag":
-              x = Math.abs(Math.sin(now * 0.003 + index)) * 80 + 10;
-              y = Math.max(10, Math.min(90, y + (Math.random() - 0.5) * 20));
-              break;
+              case "zigzag":
+                x = Math.abs(Math.sin(now * 0.003 + index)) * 80 + 10;
+                y = Math.max(10, Math.min(90, y + (Math.random() - 0.5) * 20));
+                break;
 
-            case "bounce":
-              x = Math.max(
-                10,
-                Math.min(90, x + Math.sin(now * 0.004 + index) * 20)
-              );
-              y = Math.max(
-                10,
-                Math.min(90, y + Math.cos(now * 0.004 + index) * 20)
-              );
-              break;
+              case "bounce":
+                x = Math.max(
+                  10,
+                  Math.min(90, x + Math.sin(now * 0.004 + index) * 20)
+                );
+                y = Math.max(
+                  10,
+                  Math.min(90, y + Math.cos(now * 0.004 + index) * 20)
+                );
+                break;
 
-            case "spiral":
-              const spiralAngle = now * 0.003 + index;
-              const radius = 15 + Math.sin(spiralAngle * 0.5) * 10;
-              x = 50 + Math.cos(spiralAngle) * radius;
-              y = 50 + Math.sin(spiralAngle) * radius;
-              break;
+              case "spiral":
+                const spiralAngle = now * 0.003 + index;
+                const radius = 15 + Math.sin(spiralAngle * 0.5) * 10;
+                x = 50 + Math.cos(spiralAngle) * radius;
+                y = 50 + Math.sin(spiralAngle) * radius;
+                break;
 
-            case "shake":
-              x = Math.max(10, Math.min(90, x + (Math.random() - 0.5) * 8));
-              y = Math.max(10, Math.min(90, y + (Math.random() - 0.5) * 8));
-              break;
+              case "shake":
+                x = Math.max(10, Math.min(90, x + (Math.random() - 0.5) * 8));
+                y = Math.max(10, Math.min(90, y + (Math.random() - 0.5) * 8));
+                break;
 
-            default:
-              break;
-          }
+              default:
+                break;
+            }
 
-          const size =
-            Math.random() < 0.2
-              ? Math.max(
-                  80,
-                  Math.min(
-                    250,
-                    newGhosts[index].size + (Math.random() - 0.5) * 30
+            const size =
+              Math.random() < 0.2
+                ? Math.max(
+                    80,
+                    Math.min(
+                      250,
+                      newGhosts[index].size + (Math.random() - 0.5) * 30
+                    )
                   )
-                )
-              : newGhosts[index].size;
-          const rotation =
-            Math.random() < 0.15
-              ? (newGhosts[index].rotation + Math.random() * 60) % 360
-              : newGhosts[index].rotation;
+                : newGhosts[index].size;
+            const rotation =
+              Math.random() < 0.15
+                ? (newGhosts[index].rotation + Math.random() * 60) % 360
+                : newGhosts[index].rotation;
 
-          newGhosts[index] = {
-            ...newGhosts[index],
-            pos: { x, y },
-            size,
-            rotation,
-          };
+            newGhosts[index] = {
+              ...newGhosts[index],
+              pos: { x, y },
+              size,
+              rotation,
+            };
 
-          return newGhosts;
-        });
-      }, gh.speed);
-    });
+            return newGhosts;
+          });
+        }, gh.speed);
+      })
+      .filter(Boolean);
 
     return () => {
       console.log("Clearing movement timers");
@@ -227,32 +226,72 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
       {/* ✅ 회전 정보 표시 (디버깅용) */}
       {supported && (
-        <div style={{
-          position: "absolute", top: 100, left: 20,
-          background: "rgba(0,0,0,0.7)", color: "white",
-          padding: "10px", borderRadius: "8px", fontSize: "11px",
-          zIndex: 50
-        }}>
-          <div>🧭 방향: {Math.round(orientation.alpha)}°</div>
-          <div>📱 기울기: {Math.round(orientation.beta)}°</div>
+        <div
+          style={{
+            position: "absolute",
+            top: 100,
+            left: 20,
+            background: "rgba(0,0,0,0.8)",
+            color: "white",
+            padding: "12px",
+            borderRadius: "8px",
+            fontSize: "11px",
+            zIndex: 50,
+            minWidth: "200px",
+          }}
+        >
+          <div>
+            🧭 현재: α={Math.round(orientation.alpha)}° β=
+            {Math.round(orientation.beta)}°
+          </div>
+
+          {ghosts.find((g) => g.type === "orientation-fixed") && (
+            <>
+              <hr style={{ margin: "6px 0", border: "1px solid #555" }} />
+              <div style={{ color: "#ff6b6b" }}>
+                🎯 목표: α=
+                {Math.round(
+                  ghosts.find((g) => g.type === "orientation-fixed").targetAlpha
+                )}
+                ° β=
+                {Math.round(
+                  ghosts.find((g) => g.type === "orientation-fixed").targetBeta
+                )}
+                °
+              </div>
+              <div style={{ fontSize: "10px", color: "#ccc" }}>
+                (±{ghosts.find((g) => g.type === "orientation-fixed").tolerance}
+                ° 허용)
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {/* ✅ 권한 요청 버튼 (iOS용) */}
       {!supported && (
-        <button 
+        <button
           onClick={() => {
-            if (typeof DeviceOrientationEvent !== 'undefined' &&
-                typeof DeviceOrientationEvent.requestPermission === 'function') {
+            if (
+              typeof DeviceOrientationEvent !== "undefined" &&
+              typeof DeviceOrientationEvent.requestPermission === "function"
+            ) {
               DeviceOrientationEvent.requestPermission();
             }
           }}
           style={{
-            position: "absolute", top: 120, left: 20,
-            background: "#4CAF50", color: "white",
-            border: "none", padding: "10px 15px",
-            borderRadius: "8px", fontSize: "12px", zIndex: 50
-          }}>
+            position: "absolute",
+            top: 120,
+            left: 20,
+            background: "#4CAF50",
+            color: "white",
+            border: "none",
+            padding: "10px 15px",
+            borderRadius: "8px",
+            fontSize: "12px",
+            zIndex: 50,
+          }}
+        >
           📱 회전 감지 활성화
         </button>
       )}

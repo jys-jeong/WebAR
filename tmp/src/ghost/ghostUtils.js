@@ -9,10 +9,10 @@ export const randomBetween = (min, max) =>
 
 export const createRandomGhost = () => ({
   src: IMAGE_OPTIONS[Math.floor(Math.random() * IMAGE_OPTIONS.length)],
-  pos: { x: randomBetween(10, 90), y: randomBetween(10, 90) },
+  pos: { x: randomBetween(0, 100), y: randomBetween(0, 100) },
   size: randomBetween(100, 200),
   rotation: 0,
-  hue: 0,                          // 원본 색상 유지
-  speed: randomBetween(150, 800),  // 0.15‒0.8초 이동 주기
+  hue: randomBetween(0, 360),
+  speed: randomBetween(150, 800),   // 🔹 0.15‒0.8 초마다 이동
   anim: false
 });
