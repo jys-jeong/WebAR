@@ -1,4 +1,3 @@
-// hooks/useGeoLocation.js
 import { useState, useEffect } from 'react';
 
 export default function useGeoLocation() {
@@ -11,7 +10,8 @@ export default function useGeoLocation() {
       return;
     }
 
-    const watchId = navigator.geolocation.watchPosition(
+    // ✅ watchPosition 대신 getCurrentPosition 사용 (한 번만)
+    navigator.geolocation.getCurrentPosition(
       (position) => {
         setLocation({
           latitude: position.coords.latitude,
@@ -23,11 +23,11 @@ export default function useGeoLocation() {
       { 
         enableHighAccuracy: true, 
         timeout: 10000, 
-        maximumAge: 1000 
+        maximumAge: 60000 // 1분간 캐시 사용
       }
     );
 
-    return () => navigator.geolocation.clearWatch(watchId);
+    // cleanup 함수 제거 (watchPosition이 아니므로)
   }, []);
 
   return { location, error };

@@ -74,32 +74,36 @@ export default function SimpleAROverlay({ isActive, onClose }) {
     return ghost;
   };
 
-  // ✅ GPS 위치 확보 시 새 게임 시작
-  useEffect(() => {
-    if (!location || !isActive) return;
+  // // ✅ GPS 위치 확보 시 새 게임 시작
+  // useEffect(() => {
+  //   if (!location || !isActive) return;
 
-    // 처음 위치를 얻었거나, 500m 이상 이동했을 때
-    if (
-      !lastLocation ||
-      calculateDistance(
-        lastLocation.latitude,
-        lastLocation.longitude,
-        location.latitude,
-        location.longitude
-      ) > 500
-    ) {
-      console.log("🌍 GPS 위치 기반 게임 시작:", location);
-      resetGame(location); // 현재 위치를 resetGame에 전달
-      setLastLocation(location);
-    }
-  }, [location, isActive, resetGame, lastLocation]);
+  //   // 처음 위치를 얻었거나, 500m 이상 이동했을 때
+  //   if (
+  //     !lastLocation ||
+  //     calculateDistance(
+  //       lastLocation.latitude,
+  //       lastLocation.longitude,
+  //       location.latitude,
+  //       location.longitude
+  //     ) > 500
+  //   ) {
+  //     console.log("🌍 GPS 위치 기반 게임 시작:", location);
+  //     resetGame(location); // 현재 위치를 resetGame에 전달
+  //     setLastLocation(location);
+  //   }
+  // }, [location, isActive, resetGame, lastLocation]);
 
-  // AR 열릴 때 기본 게임 리셋 (GPS 없을 때)
+  // AR 열릴 때 한 번만 게임 리셋
   useEffect(() => {
-    if (isActive && !location) {
-      resetGame();
+    if (isActive) {
+      if (location) {
+        resetGame(location); // GPS 있으면 GPS 기반으로
+      } else {
+        resetGame(); // GPS 없으면 기본 게임
+      }
     }
-  }, [isActive, location, resetGame]);
+  }, [isActive]); // location 의존성 제거
 
   // 카메라 설정
   useEffect(() => {
