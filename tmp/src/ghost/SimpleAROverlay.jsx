@@ -1,14 +1,18 @@
 // components/SimpleAROverlay.jsx
 import React, { useEffect, useRef } from "react";
 import useGhostGame from "./useGhostGame";
+import useDeviceOrientation from "./useDeviceOrientation"; // ✅ 추가
 import Ghost from "./Ghost";
 import ScorePanel from "./ScorePanel";
 
-const TICK = 100; // 100ms 간격으로 업데이트
+const TICK = 100;
 
 export default function SimpleAROverlay({ isActive, onClose }) {
   const videoRef = useRef(null);
   const lastStepRef = useRef([]);
+  
+  // ✅ 회전 감지 추가
+  const { orientation, supported } = useDeviceOrientation();
 
   const {
     ghosts,
@@ -19,6 +23,43 @@ export default function SimpleAROverlay({ isActive, onClose }) {
     catchGhost,
     movementPatterns,
   } = useGhostGame();
+
+  // ✅ 회전 기반 유령 위치 계산 함수 추가
+  const getRotatedGhost = (ghost, index) => {
+    if (!supported) return ghost;
+
+    // 각 유령마다 다른 기준 방향 설정 (0~360도)
+    const baseDirection = (index * 60) % 360;
+    const currentDirection = orientation.alpha;
+    
+    // 현재 방향과 유령 기준 방향의 차이 계산
+    let angleDiff = ((baseDirection - currentDirection + 360) % 360);
+    if (angleDiff > 180) angleDiff = 360 - angleDiff;
+    
+    // 시야각 내에 있는지 확인 (±60도)
+    const inView = angleDiff <= 60;
+    
+    if (!inView) {
+      // 화면 밖으로 이동
+      return { 
+        ...ghost, 
+        pos: { x: -100, y: -100 }
+      };
+    }
+
+    // 회전에 따른 위치 보정
+    const rotationOffset = (currentDirection - baseDirection) * 0.2;
+    const adjustedX = Math.max(5, Math.min(95, ghost.pos.x + rotationOffset));
+    const adjustedY = ghost.pos.y + Math.sin(orientation.beta * Math.PI / 180) * 5;
+
+    return {
+      ...ghost,
+      pos: {
+        x: adjustedX,
+        y: Math.max(5, Math.min(95, adjustedY))
+      }
+    };
+  };
 
   // AR 열릴 때 게임 리셋
   useEffect(() => {
@@ -44,22 +85,20 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
   }, [isActive]);
 
-  // ✅ 실시간 움직임 로직
+  // 실시간 움직임 로직 (기존 코드 그대로 유지)
   useEffect(() => {
     if (!isActive || ghosts.length === 0) return;
 
     console.log("Starting movement for", ghosts.length, "ghosts");
 
-    // ✅ 각 유령별로 독립적인 타이머 생성 (기존 방식 개선)
     const timers = ghosts.map((gh, index) => {
       return setInterval(() => {
-        console.log(`Moving ghost ${index}`); // 디버깅용
+        console.log(`Moving ghost ${index}`);
 
         setGhosts((prevGhosts) => {
           const newGhosts = [...prevGhosts];
-          if (!newGhosts[index]) return prevGhosts; // 안전 체크
+          if (!newGhosts[index]) return prevGhosts;
 
-          // 패턴 선택
           const pattern =
             movementPatterns[
               Math.floor(Math.random() * movementPatterns.length)
@@ -112,11 +151,10 @@ export default function SimpleAROverlay({ isActive, onClose }) {
               y = Math.max(10, Math.min(90, y + (Math.random() - 0.5) * 8));
               break;
 
-            default: // pause
+            default:
               break;
           }
 
-          // 추가 효과
           const size =
             Math.random() < 0.2
               ? Math.max(
@@ -132,18 +170,16 @@ export default function SimpleAROverlay({ isActive, onClose }) {
               ? (newGhosts[index].rotation + Math.random() * 60) % 360
               : newGhosts[index].rotation;
 
-          // 업데이트
           newGhosts[index] = {
             ...newGhosts[index],
             pos: { x, y },
             size,
             rotation,
-            
           };
 
           return newGhosts;
         });
-      }, gh.speed); // 각 유령의 개별 속도 사용
+      }, gh.speed);
     });
 
     return () => {
@@ -166,7 +202,6 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         zIndex: 9999,
       }}
     >
-      {/* 카메라 비디오 */}
       <video
         ref={videoRef}
         autoPlay
@@ -175,20 +210,53 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
 
-      {/* ✅ Ghost 컴포넌트들 렌더링 */}
-      {ghosts.map((gh, i) => (
-        <Ghost
-          key={`ghost-${i}`}
-          gh={gh}
-          idx={i}
-          onClick={() => catchGhost(i)}
-        />
-      ))}
+      {/* ✅ 회전 기반 Ghost 렌더링 */}
+      {ghosts.map((gh, i) => {
+        const rotatedGhost = getRotatedGhost(gh, i);
+        return (
+          <Ghost
+            key={`ghost-${i}`}
+            gh={rotatedGhost}
+            idx={i}
+            onClick={() => catchGhost(i)}
+          />
+        );
+      })}
 
-      {/* 스코어 패널 */}
       <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
 
-      {/* 닫기 버튼 */}
+      {/* ✅ 회전 정보 표시 (디버깅용) */}
+      {supported && (
+        <div style={{
+          position: "absolute", top: 100, left: 20,
+          background: "rgba(0,0,0,0.7)", color: "white",
+          padding: "10px", borderRadius: "8px", fontSize: "11px",
+          zIndex: 50
+        }}>
+          <div>🧭 방향: {Math.round(orientation.alpha)}°</div>
+          <div>📱 기울기: {Math.round(orientation.beta)}°</div>
+        </div>
+      )}
+
+      {/* ✅ 권한 요청 버튼 (iOS용) */}
+      {!supported && (
+        <button 
+          onClick={() => {
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+              DeviceOrientationEvent.requestPermission();
+            }
+          }}
+          style={{
+            position: "absolute", top: 120, left: 20,
+            background: "#4CAF50", color: "white",
+            border: "none", padding: "10px 15px",
+            borderRadius: "8px", fontSize: "12px", zIndex: 50
+          }}>
+          📱 회전 감지 활성화
+        </button>
+      )}
+
       <button
         onClick={onClose}
         style={{
@@ -209,7 +277,6 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         ×
       </button>
 
-      {/* 축하 메시지 */}
       {ghosts.length === 0 && (
         <div
           style={{
@@ -238,7 +305,6 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         </div>
       )}
 
-      {/* CSS 애니메이션 */}
       <style jsx>{`
         @keyframes ghostCatch {
           0% {

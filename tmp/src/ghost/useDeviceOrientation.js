@@ -11,14 +11,15 @@ export default function useDeviceOrientation() {
 
   useEffect(() => {
     // 권한 요청 (iOS 13+)
-    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+    if (typeof DeviceOrientationEvent !== 'undefined' && 
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
       DeviceOrientationEvent.requestPermission()
         .then(permissionState => {
           if (permissionState === 'granted') {
             setSupported(true);
           }
         });
-    } else if (window.DeviceOrientationEvent) {
+    } else if (typeof DeviceOrientationEvent !== 'undefined') {
       setSupported(true);
     }
 
