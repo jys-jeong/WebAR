@@ -23,13 +23,12 @@ export default function useGhostGame() {
     let newGhosts = [];
 
     if (userLocation) {
-      // ✅ 강제로 3마리 생성하도록 수정
-      const numGpsGhosts = 3; // 랜덤 대신 고정
-      console.log("🎯 GPS 유령 생성 개수:", numGpsGhosts);
+      const numGpsGhosts = 3; // 3마리 고정
 
       for (let i = 0; i < numGpsGhosts; i++) {
-        const distance = 60 + i * 20; // 60m, 80m, 100m
-        const angle = i * 120; // 0도, 120도, 240도
+        // ✅ 1-5m 초근거리로 수정
+        const distance = Math.random() * 4 + 1; // 1~5m 랜덤
+        const angle = Math.random() * 360; // 완전 랜덤 방향
 
         const latOffset =
           (distance * Math.cos((angle * Math.PI) / 180)) / 111000;
@@ -37,46 +36,41 @@ export default function useGhostGame() {
           (distance * Math.sin((angle * Math.PI) / 180)) /
           (111000 * Math.cos((userLocation.latitude * Math.PI) / 180));
 
-        const ghost = {
+        newGhosts.push({
           ...createRandomGhost(),
           type: "gps-fixed",
           gpsLat: userLocation.latitude + latOffset,
           gpsLon: userLocation.longitude + lonOffset,
-          maxVisibleDistance: 120, // 거리 여유있게
-          title: `GPS유령${i + 1}`,
+          maxVisibleDistance: 6, // 6m 이내에서만 보임
+          title: `초근거리 유령 ${i + 1}`,
           targetDistance: distance,
-        };
+        });
 
-        newGhosts.push(ghost);
-        console.log(`👻 GPS 유령 ${i + 1} 생성:`, distance + "m", angle + "도");
+        console.log(
+          `👻 GPS 유령 ${i + 1}: ${distance.toFixed(1)}m 거리에 배치`
+        );
       }
     }
 
-    // 다른 타입 추가
-    newGhosts.push({
-      ...createRandomGhost(),
-      type: "orientation-fixed",
-      targetAlpha: Math.random() * 360,
-      targetBeta: (Math.random() - 0.5) * 60,
-      tolerance: 30,
-    });
-
-    newGhosts.push({
-      ...createRandomGhost(),
-      type: "always-visible",
-    });
-
-    console.log("🎮 전체 유령 배열:", newGhosts);
-    console.log("📊 유령 타입별 개수:", {
-      gps: newGhosts.filter((g) => g.type === "gps-fixed").length,
-      orientation: newGhosts.filter((g) => g.type === "orientation-fixed")
-        .length,
-      visible: newGhosts.filter((g) => g.type === "always-visible").length,
-    });
+    // 다른 타입들 추가
+    newGhosts.push(
+      {
+        ...createRandomGhost(),
+        type: "orientation-fixed",
+        targetAlpha: Math.random() * 360,
+        targetBeta: (Math.random() - 0.5) * 60,
+        tolerance: 30,
+      },
+      {
+        ...createRandomGhost(),
+        type: "always-visible",
+      }
+    );
 
     setGhosts(newGhosts);
     setScore(0);
     setTotalCaught(0);
+
   }, []);
 
   const catchGhost = (index) => {

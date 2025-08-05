@@ -52,26 +52,21 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         ghost.gpsLon
       );
 
-      console.log(
-        `👻 유령 ${index} (${ghost.title}): 거리 ${distance.toFixed(
-          0
-        )}m, 최대거리 ${ghost.maxVisibleDistance}m`
-      );
+      console.log(`👻 유령 ${index}: 거리 ${distance.toFixed(2)}m`);
 
-      const maxDistance = ghost.maxVisibleDistance || 100;
+      const maxDistance = ghost.maxVisibleDistance || 6;
       if (distance > maxDistance) {
-        console.log(`❌ 유령 ${index} 너무 멀어서 숨김`);
         return { ...ghost, pos: { x: -100, y: -100 } };
       }
 
-      console.log(`✅ 유령 ${index} 표시됨`);
-      const sizeScale = Math.max(0.3, 50 / Math.max(distance, 5));
+      // 초근거리용 크기 조정 (더 크게)
+      const sizeScale = Math.max(0.8, 5 / Math.max(distance, 0.5));
 
       return {
         ...ghost,
         size: ghost.size * sizeScale,
-        distance: Math.round(distance),
-        opacity: Math.max(0.4, 1 - distance / maxDistance),
+        distance: distance.toFixed(1), // 소수점 한 자리까지
+        opacity: Math.max(0.6, 1 - distance / maxDistance),
       };
     }
 
@@ -308,58 +303,100 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       })}
 
       <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
-      {ghosts.map((gh, i) => {
-        const processedGhost = getProcessedGhost(gh, i);
+      {/* 초근거리 방향 안내 */}
+      {location && ghosts.filter((g) => g.type === "gps-fixed").length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 120,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(255,0,0,0.9)",
+            color: "white",
+            padding: "15px",
+            borderRadius: "15px",
+            textAlign: "center",
+            fontSize: "13px",
+            zIndex: 60,
+            minWidth: "250px",
+            border: "3px solid #FF6B6B",
+            boxShadow: "0 0 20px rgba(255,0,0,0.5)",
+          }}
+        >
+          <div
+            style={{
+              color: "#FFE082",
+              fontWeight: "bold",
+              marginBottom: "10px",
+            }}
+          >
+            🔥 바로 옆에 숨어있음!
+          </div>
+          {ghosts
+            .filter((g) => g.type === "gps-fixed")
+            .map((gh, i) => {
+              const distance = calculateDistance(
+                location.latitude,
+                location.longitude,
+                gh.gpsLat,
+                gh.gpsLon
+              );
 
-        console.log(
-          `🎨 렌더링 ${i}: 타입=${gh.type}, 위치=(${processedGhost.pos.x}, ${processedGhost.pos.y})`
-        );
+              const dLat = gh.gpsLat - location.latitude;
+              const dLon = gh.gpsLon - location.longitude;
+              const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI;
+              const normalizedBearing = (bearing + 360) % 360;
+              const directions = [
+                "북",
+                "북동",
+                "동",
+                "남동",
+                "남",
+                "남서",
+                "서",
+                "북서",
+              ];
+              const directionIndex = Math.round(normalizedBearing / 45) % 8;
+              const direction = directions[directionIndex];
 
-        if (processedGhost.pos.x < 0) {
-          console.log(`🚫 유령 ${i} 화면 밖이라 렌더링 안함`);
-          return null;
-        }
-
-        // GPS 유령 거리 표시
-        if (processedGhost.distance !== undefined && processedGhost.pos.x > 0) {
-          return (
-            <div key={`ghost-wrapper-${i}`} style={{ position: "relative" }}>
-              <Ghost
-                gh={processedGhost}
-                idx={i}
-                onClick={() => catchGhost(i)}
-              />
-              <div
-                style={{
-                  position: "absolute",
-                  left: `${processedGhost.pos.x}%`,
-                  top: `${processedGhost.pos.y - 5}%`,
-                  transform: "translate(-50%, -100%)",
-                  background: "rgba(255,215,0,0.9)",
-                  color: "black",
-                  padding: "2px 6px",
-                  borderRadius: "10px",
-                  fontSize: "10px",
-                  fontWeight: "bold",
-                  zIndex: 25 + i,
-                  pointerEvents: "none",
-                }}
-              >
-                📍 {processedGhost.distance}m
-              </div>
-            </div>
-          );
-        }
-
-        return (
-          <Ghost
-            key={`ghost-${i}`}
-            gh={processedGhost}
-            idx={i}
-            onClick={() => catchGhost(i)}
-          />
-        );
-      })}
+              return (
+                <div
+                  key={i}
+                  style={{
+                    margin: "8px 0",
+                    padding: "8px 12px",
+                    borderRadius: "10px",
+                    backgroundColor:
+                      distance < 3
+                        ? "rgba(255, 82, 82, 0.6)"
+                        : "rgba(255, 167, 38, 0.5)",
+                    color: "white",
+                    fontSize: "14px",
+                    fontWeight: "bold",
+                    textShadow: "1px 1px 2px black",
+                  }}
+                >
+                  👻 <strong>{direction}</strong> 방향{" "}
+                  <strong>{distance.toFixed(1)}m</strong>
+                  {distance < 2 && (
+                    <span style={{ color: "#FFE082" }}> 🚨 극근거리!</span>
+                  )}
+                  {distance < 3 && distance >= 2 && (
+                    <span style={{ color: "#FFCDD2" }}> 🔥 바로 옆!</span>
+                  )}
+                  {distance < 5 && distance >= 3 && (
+                    <span style={{ color: "#FFF3E0" }}> ⚡ 가까움</span>
+                  )}
+                </div>
+              );
+            })}
+          <div
+            style={{ fontSize: "11px", color: "#FFCDD2", marginTop: "10px" }}
+          >
+            🕵️‍♂️ 한두 걸음만 움직이면 발견!
+          </div>
+        </div>
+      )}
       {/* ✅ GPS + 회전 정보 표시 */}
       {supported && (
         <div
