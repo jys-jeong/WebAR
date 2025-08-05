@@ -26,29 +26,28 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
   // ✅ 회전 기반 유령 위치 계산 함수 추가
   const getRotatedGhost = (ghost, index) => {
-    if (!supported) return ghost;
+    if (!supported || ghost.type !== "orientation-fixed") return ghost;
 
-    // 🎯 Type A: orientation-fixed만 특별 처리
-    if (ghost.type === "orientation-fixed") {
-      const alphaDiff = Math.min(
-        Math.abs(orientation.alpha - ghost.targetAlpha),
-        360 - Math.abs(orientation.alpha - ghost.targetAlpha)
-      );
-      const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
+    const alphaDiff = Math.min(
+      Math.abs(orientation.alpha - ghost.targetAlpha),
+      360 - Math.abs(orientation.alpha - ghost.targetAlpha)
+    );
+    const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
 
-      // 목표 각도 범위 내에 있는지 확인
-      const inView =
-        alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
+    const inView = alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
 
-      if (!inView) {
-        return { ...ghost, pos: { x: -100, y: -100 } }; // 숨김
-      }
-
-      return ghost; // 위치 고정
+    if (!inView) {
+      return { ...ghost, pos: { x: -100, y: -100 } };
     }
 
-    // 👻 Type B: always-visible은 그대로 표시
-    return ghost;
+    // ✅ 목표 각도에 도달하면 특정 위치에 고정
+    return {
+      ...ghost,
+      pos: {
+        x: ghost.targetX, // 미리 설정된 고정 X 위치
+        y: ghost.targetY, // 미리 설정된 고정 Y 위치
+      },
+    };
   };
 
   // AR 열릴 때 게임 리셋

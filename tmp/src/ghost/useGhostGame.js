@@ -3,8 +3,14 @@ import { useState, useCallback, useEffect } from "react";
 import { createRandomGhost } from "./ghostUtils";
 
 const movementPatterns = [
-  "random-jump", "smooth-slide", "circular", "zigzag",
-  "bounce", "pause", "spiral", "shake",
+  "random-jump",
+  "smooth-slide",
+  "circular",
+  "zigzag",
+  "bounce",
+  "pause",
+  "spiral",
+  "shake",
 ];
 
 export default function useGhostGame() {
@@ -14,30 +20,43 @@ export default function useGhostGame() {
 
   // ✅ 두 타입 유령 생성
   const resetGame = useCallback(() => {
-    const fixedTargetAlpha = Math.random() * 360;        // 0~360도
-    const fixedTargetBeta = (Math.random() - 0.5) * 60;  // -30~30도
-    
+    const fixedTargetAlpha = Math.random() * 360; // 0~360도
+    const fixedTargetBeta = (Math.random() - 0.5) * 60; // -30~30도
+
     const newGhosts = [
+      {
+        ...createRandomGhost(),
+        type: "orientation-fixed",
+        targetAlpha: 90, // 동쪽(90°)에서
+        targetBeta: 15, // 앞으로 기울일 때(15°)
+        targetX: 25, // 화면 왼쪽(25%)에
+        targetY: 30, // 화면 위쪽(30%)에 나타남
+        tolerance: 10, // ±10도 오차
+      },
       // 🎯 Type A: 특정 각도에서만 보이는 고정 유령
       {
         ...createRandomGhost(),
         type: "orientation-fixed",
         targetAlpha: fixedTargetAlpha,
         targetBeta: fixedTargetBeta,
-        tolerance: 15  // ±15도 허용 오차
+        tolerance: 15, // ±15도 허용 오차
       },
       // 👻 Type B: 항상 보이는 움직이는 유령
       {
         ...createRandomGhost(),
-        type: "always-visible"
-      }
+        type: "always-visible",
+      },
     ];
 
     setGhosts(newGhosts);
     setScore(0);
     setTotalCaught(0);
-    
-    console.log(`🎯 목표 각도: α=${fixedTargetAlpha.toFixed(0)}°, β=${fixedTargetBeta.toFixed(0)}°`);
+
+    console.log(
+      `🎯 목표 각도: α=${fixedTargetAlpha.toFixed(
+        0
+      )}°, β=${fixedTargetBeta.toFixed(0)}°`
+    );
   }, []);
 
   // 나머지 함수들은 그대로 유지
@@ -46,8 +65,8 @@ export default function useGhostGame() {
       prev.map((gh, i) => (i === index ? { ...gh, anim: true } : gh))
     );
 
-    setScore(prev => prev + 10);
-    setTotalCaught(prev => prev + 1);
+    setScore((prev) => prev + 10);
+    setTotalCaught((prev) => prev + 1);
 
     setTimeout(() => {
       setGhosts((prev) => {
@@ -60,10 +79,17 @@ export default function useGhostGame() {
     }, 500);
   };
 
-  useEffect(() => { resetGame(); }, [resetGame]);
+  useEffect(() => {
+    resetGame();
+  }, [resetGame]);
 
   return {
-    ghosts, setGhosts, score, totalCaught,
-    resetGame, catchGhost, movementPatterns,
+    ghosts,
+    setGhosts,
+    score,
+    totalCaught,
+    resetGame,
+    catchGhost,
+    movementPatterns,
   };
 }
