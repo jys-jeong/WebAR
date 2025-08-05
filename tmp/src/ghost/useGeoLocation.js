@@ -1,3 +1,4 @@
+// hooks/useGeoLocation.js - 실시간 갱신되도록 수정
 import { useState, useEffect } from 'react';
 
 export default function useGeoLocation() {
@@ -10,24 +11,25 @@ export default function useGeoLocation() {
       return;
     }
 
-    // ✅ watchPosition 대신 getCurrentPosition 사용 (한 번만)
-    navigator.geolocation.getCurrentPosition(
+    // ✅ watchPosition으로 다시 변경 (실시간 추적)
+    const watchId = navigator.geolocation.watchPosition(
       (position) => {
         setLocation({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy: position.coords.accuracy
         });
+        console.log("📍 GPS 업데이트:", position.coords.latitude, position.coords.longitude);
       },
       (err) => setError(err.message),
       { 
         enableHighAccuracy: true, 
         timeout: 10000, 
-        maximumAge: 60000 // 1분간 캐시 사용
+        maximumAge: 1000 // 1초마다 갱신
       }
     );
 
-    // cleanup 함수 제거 (watchPosition이 아니므로)
+    return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
   return { location, error };
