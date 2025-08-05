@@ -1,38 +1,28 @@
-// hooks/useDeviceOrientation.js
 import { useState, useEffect } from 'react';
 
 export default function useDeviceOrientation() {
-  const [orientation, setOrientation] = useState({ 
-    alpha: 0,  // z축 회전 (나침반)
-    beta: 0,   // x축 회전 (앞뒤 기울기)  
-    gamma: 0   // y축 회전 (좌우 기울기)
-  });
-  const [supported, setSupported] = useState(false);
+  const [orientation, setOrientation] = useState({ alpha:0, beta:0, gamma:0 });
+  const [supported,  setSupported]   = useState(false);
 
   useEffect(() => {
-    // 권한 요청 (iOS 13+)
-    if (typeof DeviceOrientationEvent !== 'undefined' && 
+    // iOS 13+ 권한
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function') {
       DeviceOrientationEvent.requestPermission()
-        .then(permissionState => {
-          if (permissionState === 'granted') {
-            setSupported(true);
-          }
-        });
+        .then(state => { if (state === 'granted') setSupported(true); });
     } else if (typeof DeviceOrientationEvent !== 'undefined') {
       setSupported(true);
     }
 
-    function handleOrientation(event) {
+    function handle(e) {
       setOrientation({
-        alpha: event.alpha || 0,   // 0-360도
-        beta: event.beta || 0,     // -180~180도
-        gamma: event.gamma || 0    // -90~90도
+        alpha: e.alpha || 0,
+        beta:  e.beta  || 0,
+        gamma: e.gamma || 0
       });
     }
-
-    window.addEventListener('deviceorientation', handleOrientation);
-    return () => window.removeEventListener('deviceorientation', handleOrientation);
+    window.addEventListener('deviceorientation', handle);
+    return () => window.removeEventListener('deviceorientation', handle);
   }, []);
 
   return { orientation, supported };

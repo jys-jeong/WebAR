@@ -1,65 +1,51 @@
 import { useState, useCallback, useEffect } from "react";
-import { createRandomGhost, randomBetween } from "./ghostUtils";
+import { createRandomGhost } from "./ghostUtils";
 
 const movementPatterns = [
-  "random-jump",
-  "smooth-slide",
-  "circular",
-  "zigzag",
-  "bounce",
-  "pause",
-  "spiral",
-  "shake",
+  "random-jump","smooth-slide","circular","zigzag",
+  "bounce","pause","spiral","shake"
 ];
 
 export default function useGhostGame() {
-  const [ghosts, setGhosts] = useState([]);
-  const [score, setScore] = useState(0);
-  const [totalCaught, setTotalCaught] = useState(0);
+  const [ghosts,       setGhosts] = useState([]);
+  const [score,        setScore]  = useState(0);
+  const [totalCaught,  setCaught] = useState(0);
 
-  // 새 게임 초기화
+  /* 새 라운드 생성 ─ orientation-fixed 1마리 + always-visible 1마리 */
   const resetGame = useCallback(() => {
-    const numImages = Math.floor(Math.random() * 6) + 1; // 1-6개
-    const newGhosts = Array.from({ length: numImages }, createRandomGhost);
-    setGhosts(newGhosts);
+    const g1 = {
+      ...createRandomGhost(),
+      type: "orientation-fixed",
+      targetAlpha: Math.random()*360,            // 목표 방향
+      targetBeta:  (Math.random()-0.5)*60,       // 목표 기울기 (-30~30°)
+      tolerance: 15                              // 허용 오차 ±15°
+    };
+    const g2 = { ...createRandomGhost(), type:"always-visible" };
+    setGhosts([g1, g2]);
     setScore(0);
-    setTotalCaught(0);
+    setCaught(0);
+    console.log(
+      `🎯 목표 α=${g1.targetAlpha.toFixed(0)}°, β=${g1.targetBeta.toFixed(0)}°`
+    );
   }, []);
 
-  // 유령 잡기
-  const catchGhost = (index) => {
-    // 애니메이션 활성화
-    setGhosts((prev) =>
-      prev.map((gh, i) => (i === index ? { ...gh, anim: true } : gh))
-    );
+  /* 잡기 */
+  const catchGhost = (idx) => {
+    setGhosts(g => g.map((gh,i)=> i===idx?{...gh,anim:true}:gh));
+    setScore(s=>s+10);
+    setCaught(c=>c+1);
 
-    // 스코어 증가
-    setScore(prev => prev + 10);
-    setTotalCaught(prev => prev + 1);
-
-    // 0.5초 후 제거
     setTimeout(() => {
-      setGhosts((prev) => {
-        const filtered = prev.filter((_, i) => i !== index);
-        // 모든 유령이 사라지면 새 라운드
-        if (filtered.length === 0) {
-          setTimeout(() => resetGame(), 1000);
-        }
-        return filtered;
+      setGhosts(g => {
+        const remain = g.filter((_,i)=>i!==idx);
+        if (remain.length === 0) setTimeout(resetGame, 1_000);
+        return remain;
       });
     }, 500);
   };
 
-  // 컴포넌트 마운트 시 게임 시작
   useEffect(() => { resetGame(); }, [resetGame]);
 
-  return {
-    ghosts,
-    setGhosts,
-    score,
-    totalCaught,
-    resetGame,
-    catchGhost,
-    movementPatterns,
-  };
+  return { ghosts, setGhosts, score, totalCaught,
+           resetGame, catchGhost, movementPatterns };
 }

@@ -1,7 +1,7 @@
 // components/SimpleAROverlay.jsx
 import React, { useEffect, useRef } from "react";
 import useGhostGame from "./useGhostGame";
-import useDeviceOrientation from "./useDeviceOrientation"; // ✅ 추가
+import useDeviceOrientation from "./useDeviceOrientation"; 
 import Ghost from "./Ghost";
 import ScorePanel from "./ScorePanel";
 
