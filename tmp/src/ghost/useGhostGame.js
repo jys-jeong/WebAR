@@ -24,23 +24,32 @@ export default function useGhostGame() {
     const fixedTargetBeta = (Math.random() - 0.5) * 60; // -30~30도
 
     const newGhosts = [
+      // 🎯 Type A: 특정 각도에서만 보이는 고정 유령
+      //   {
+      //     ...createRandomGhost(),
+      //     type: "orientation-fixed",
+      //     targetAlpha: fixedTargetAlpha, // 동쪽(90°)에서
+      //     targetBeta: fixedTargetBeta, // 앞으로 기울일 때(15°)
+      //     targetX: 25, // 화면 왼쪽(25%)에
+      //     targetY: 30, // 화면 위쪽(30%)에 나타남
+      //     tolerance: 30 // ±10도 오차
+      //   },
       {
         ...createRandomGhost(),
         type: "spatial-fixed",
-        // ✅ 가상 공간에서의 절대 위치 (극좌표)
-        worldAlpha: 90, // 동쪽 방향
-        worldBeta: 0, // 수평
-        worldDistance: 2.0, // 2미터 거리
-        viewAngle: 30, // ±30도 시야각에서 보임
+        // ✅ 가상 공간에서의 절대 위치 (실제 그 자리에 있음)
+        worldAlpha: 30, // 동쪽 방향에 고정
+        worldBeta: 15, // 약간 위쪽에 고정
+        worldDistance: 3, // 3미터 거리에 고정
+        // 화면 좌표가 아닌 실제 공간 좌표
       },
-      // 🎯 Type A: 특정 각도에서만 보이는 고정 유령
-      {
-        ...createRandomGhost(),
-        type: "orientation-fixed",
-        targetAlpha: fixedTargetAlpha,
-        targetBeta: fixedTargetBeta,
-        tolerance: 15, // ±15도 허용 오차
-      },
+      //   {
+      //     ...createRandomGhost(),
+      //     type: "orientation-fixed",
+      //     targetAlpha: fixedTargetAlpha,
+      //     targetBeta: fixedTargetBeta,
+      //     tolerance: 15, // ±15도 허용 오차
+      //   },
       // 👻 Type B: 항상 보이는 움직이는 유령
       {
         ...createRandomGhost(),

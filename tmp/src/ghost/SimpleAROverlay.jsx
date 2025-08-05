@@ -23,38 +23,47 @@ export default function SimpleAROverlay({ isActive, onClose }) {
     catchGhost,
     movementPatterns,
   } = useGhostGame();
-  const getWorldGhost = (ghost) => {
+  const getSpatialGhost = (ghost, index) => {
     if (!supported || ghost.type !== "spatial-fixed") return ghost;
 
-    // 현재 바라보는 방향과 유령 방향의 차이
-    const alphaDiff = (ghost.worldAlpha - orientation.alpha + 360) % 360;
-    const normalizedAlpha = alphaDiff > 180 ? alphaDiff - 360 : alphaDiff;
+    // 사용자가 바라보는 방향과 유령이 있는 방향의 차이
+    const viewerAlpha = orientation.alpha;
+    const viewerBeta = orientation.beta;
 
-    const betaDiff = ghost.worldBeta - orientation.beta;
+    // 유령 방향으로부터의 각도 차이 계산
+    let alphaDiff = ghost.worldAlpha - viewerAlpha;
+    if (alphaDiff > 180) alphaDiff -= 360;
+    if (alphaDiff < -180) alphaDiff += 360;
 
-    // 시야각 밖이면 숨김
-    if (
-      Math.abs(normalizedAlpha) > ghost.viewAngle ||
-      Math.abs(betaDiff) > ghost.viewAngle
-    ) {
+    const betaDiff = ghost.worldBeta - viewerBeta;
+
+    // 시야각 범위 (±45도)
+    const fieldOfView = 45;
+
+    // 시야각 밖이면 보이지 않음
+    if (Math.abs(alphaDiff) > fieldOfView || Math.abs(betaDiff) > fieldOfView) {
       return { ...ghost, pos: { x: -100, y: -100 } };
     }
 
     // ✅ 가상 공간 좌표를 화면 좌표로 변환
-    // 중앙(50,50)을 기준으로 각도 차이에 따라 위치 계산
-    const screenX = 50 + (normalizedAlpha / ghost.viewAngle) * 40; // ±40% 범위
-    const screenY = 50 + (betaDiff / ghost.viewAngle) * 40; // ±40% 범위
+    // 중앙을 기준으로 각도 차이에 따라 위치 결정
+    const screenX = 50 + (alphaDiff / fieldOfView) * 40; // -40% ~ +40%
+    const screenY = 50 - (betaDiff / fieldOfView) * 40; // -40% ~ +40% (Y축 반전)
 
     // 거리에 따른 크기 조정
-    const distanceScale = Math.max(0.5, 3.0 / ghost.worldDistance);
+    const sizeScale = Math.max(0.3, 2.0 / ghost.worldDistance);
+
+    console.log(
+      `유령 위치: 화면 (${screenX.toFixed(1)}, ${screenY.toFixed(1)})`
+    );
 
     return {
       ...ghost,
       pos: {
-        x: Math.max(10, Math.min(90, screenX)),
-        y: Math.max(10, Math.min(90, screenY)),
+        x: Math.max(5, Math.min(95, screenX)),
+        y: Math.max(5, Math.min(95, screenY)),
       },
-      size: ghost.size * distanceScale, // 거리에 따라 크기 변화
+      size: ghost.size * sizeScale,
     };
   };
   // ✅ 회전 기반 유령 위치 계산 함수 추가
@@ -243,7 +252,8 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
       {/* ✅ 회전 기반 Ghost 렌더링 */}
       {ghosts.map((gh, i) => {
-        const rotatedGhost = getWorldGhost(gh, i);
+        const rotatedGhost = getSpatialGhost(gh, i);
+        if (rotatedGhost.pos.x < 0) return null;
         return (
           <Ghost
             key={`ghost-${i}`}
@@ -276,7 +286,23 @@ export default function SimpleAROverlay({ isActive, onClose }) {
             🧭 현재: α={Math.round(orientation.alpha)}° β=
             {Math.round(orientation.beta)}°
           </div>
-
+          {supported && (
+            <div
+              style={
+                {
+                  /* 스타일 */
+                }
+              }
+            >
+              <div>🧭 바라보는 방향: {Math.round(orientation.alpha)}°</div>
+              <div>📱 기울기: {Math.round(orientation.beta)}°</div>
+              <hr />
+              <div style={{ color: "#ff6b6b", fontSize: "10px" }}>
+                👻 유령은 동쪽(90°) 위쪽(15°) 3m 지점에 있습니다
+                <br />그 방향을 바라보세요!
+              </div>
+            </div>
+          )}
           {ghosts.find((g) => g.type === "orientation-fixed") && (
             <>
               <hr style={{ margin: "6px 0", border: "1px solid #555" }} />
