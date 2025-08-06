@@ -34,10 +34,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   // 디버그 로그 추가 함수
   const addDebugLog = (message) => {
     const timestamp = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [
-      ...prev.slice(-20),
-      { time: timestamp, message }
-    ]);
+    setDebugLogs((prev) => [...prev.slice(-20), { time: timestamp, message }]);
   };
 
   // GPS 거리 계산 함수
@@ -56,11 +53,14 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   const copyCoordinates = () => {
     if (location) {
       const coordText = `${location.latitude}, ${location.longitude}`;
-      navigator.clipboard.writeText(coordText).then(() => {
-        addDebugLog("좌표 복사됨: " + coordText);
-      }).catch(() => {
-        addDebugLog("좌표 복사 실패");
-      });
+      navigator.clipboard
+        .writeText(coordText)
+        .then(() => {
+          addDebugLog("좌표 복사됨: " + coordText);
+        })
+        .catch(() => {
+          addDebugLog("좌표 복사 실패");
+        });
     }
   };
 
@@ -68,7 +68,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   const openInMaps = () => {
     if (location) {
       const mapsUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
-      window.open(mapsUrl, '_blank');
+      window.open(mapsUrl, "_blank");
       addDebugLog("Google Maps에서 열기");
     }
   };
@@ -84,7 +84,8 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         360 - Math.abs(orientation.alpha - ghost.targetAlpha)
       );
       const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
-      const inView = alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
+      const inView =
+        alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
 
       if (!inView) {
         return { ...ghost, pos: { x: -100, y: -100 } };
@@ -94,7 +95,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         currentAlpha: orientation.alpha,
         currentBeta: orientation.beta,
         alphaDiff: alphaDiff,
-        betaDiff: betaDiff
+        betaDiff: betaDiff,
       };
     }
 
@@ -107,34 +108,33 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         ghost.gpsLon
       );
 
-      const maxDistance = ghost.maxVisibleDistance || 6;
-      
-      // 방향 계산
-      const dLat = ghost.gpsLat - location.latitude;
-      const dLon = ghost.gpsLon - location.longitude;
-      const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI;
-      const normalizedBearing = (bearing + 360) % 360;
+      const maxDistance = ghost.maxVisibleDistance || 100; // ✅ 기본값 100m
 
-      // 반경 밖이면 숨김
+      console.log(
+        `👻 GPS 유령: 거리 ${distance.toFixed(1)}m, 최대 ${maxDistance}m`
+      );
+
+      // ✅ 거리 제한 완화 (100m 이내면 보임)
       if (distance > maxDistance) {
-        return { 
-          ...ghost, 
+        return {
+          ...ghost,
           pos: { x: -100, y: -100 },
           currentDistance: distance,
-          bearing: normalizedBearing
+          bearing: 0,
         };
       }
 
-      // 반경 안이면 이미지 표시
-      const sizeScale = Math.max(0.5, 3 / Math.max(distance, 1));
-      
+      // ✅ 현재 위치면 화면 중앙에 크게 표시
+      const sizeScale =
+        distance < 1 ? 2.0 : Math.max(0.5, 10 / Math.max(distance, 1));
+
       return {
         ...ghost,
+        pos: { x: 50, y: 50 }, // ✅ 화면 중앙에 고정
         size: ghost.size * sizeScale,
         distance: distance.toFixed(1),
-        opacity: Math.max(0.7, 1 - distance / maxDistance),
+        opacity: 0.9,
         currentDistance: distance,
-        bearing: normalizedBearing
       };
     }
 
@@ -143,7 +143,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       ...ghost,
       currentX: ghost.pos?.x || 50,
       currentY: ghost.pos?.y || 50,
-      currentRotation: ghost.rotation || 0
+      currentRotation: ghost.rotation || 0,
     };
   };
 
@@ -151,7 +151,11 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   useEffect(() => {
     if (isActive) {
       if (location && ghosts.length === 0) {
-        addDebugLog(`GPS 위치 확보: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`);
+        addDebugLog(
+          `GPS 위치 확보: ${location.latitude.toFixed(
+            6
+          )}, ${location.longitude.toFixed(6)}`
+        );
         resetGame(location);
         addDebugLog("GPS 기반 게임 시작!");
       } else if (!location && ghosts.length === 0) {
@@ -164,18 +168,26 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   // GPS 위치 변경 로그
   useEffect(() => {
     if (location) {
-      addDebugLog(`GPS 업데이트: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)} (정확도: ${location.accuracy}m)`);
+      addDebugLog(
+        `GPS 업데이트: ${location.latitude.toFixed(
+          6
+        )}, ${location.longitude.toFixed(6)} (정확도: ${location.accuracy}m)`
+      );
     }
   }, [location]);
 
   // 유령 생성 로그
   useEffect(() => {
     if (ghosts.length > 0) {
-      const gpsGhosts = ghosts.filter(g => g.type === "gps-fixed");
-      const orientationGhosts = ghosts.filter(g => g.type === "orientation-fixed");
-      const visibleGhosts = ghosts.filter(g => g.type === "always-visible");
-      
-      addDebugLog(`유령 생성 완료: GPS ${gpsGhosts.length}마리, 회전 ${orientationGhosts.length}마리, 일반 ${visibleGhosts.length}마리`);
+      const gpsGhosts = ghosts.filter((g) => g.type === "gps-fixed");
+      const orientationGhosts = ghosts.filter(
+        (g) => g.type === "orientation-fixed"
+      );
+      const visibleGhosts = ghosts.filter((g) => g.type === "always-visible");
+
+      addDebugLog(
+        `유령 생성 완료: GPS ${gpsGhosts.length}마리, 회전 ${orientationGhosts.length}마리, 일반 ${visibleGhosts.length}마리`
+      );
     }
   }, [ghosts.length]);
 
@@ -328,7 +340,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       {/* 모든 타입의 유령 렌더링 */}
       {ghosts.map((gh, i) => {
         const processedGhost = getProcessedGhost(gh, i);
-        
+
         // 화면 밖에 있으면 렌더링 안함
         if (processedGhost.pos.x < 0) {
           return null;
@@ -337,7 +349,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         // GPS 유령에 거리 표시 추가
         if (gh.type === "gps-fixed" && processedGhost.distance) {
           return (
-            <div key={`ghost-wrapper-${i}`} style={{ position: 'relative' }}>
+            <div key={`ghost-wrapper-${i}`} style={{ position: "relative" }}>
               <Ghost
                 gh={processedGhost}
                 idx={i}
@@ -347,21 +359,23 @@ export default function SimpleAROverlay({ isActive, onClose }) {
                 }}
               />
               {/* 거리 표시 */}
-              <div style={{
-                position: 'absolute',
-                left: `${processedGhost.pos.x}%`,
-                top: `${processedGhost.pos.y - 8}%`,
-                transform: 'translate(-50%, -100%)',
-                background: 'rgba(255,215,0,0.9)',
-                color: 'black',
-                padding: '4px 8px',
-                borderRadius: '12px',
-                fontSize: '11px',
-                fontWeight: 'bold',
-                zIndex: 25 + i,
-                pointerEvents: 'none',
-                border: '1px solid #FFD700'
-              }}>
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${processedGhost.pos.x}%`,
+                  top: `${processedGhost.pos.y - 8}%`,
+                  transform: "translate(-50%, -100%)",
+                  background: "rgba(255,215,0,0.9)",
+                  color: "black",
+                  padding: "4px 8px",
+                  borderRadius: "12px",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  zIndex: 25 + i,
+                  pointerEvents: "none",
+                  border: "1px solid #FFD700",
+                }}
+              >
                 📍 {processedGhost.distance}m
               </div>
             </div>
@@ -379,34 +393,46 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         );
       })}
 
-      <ScorePanel left={ghosts.length} score={score} total={totalCaught} ghosts={ghosts} />
+      <ScorePanel
+        left={ghosts.length}
+        score={score}
+        total={totalCaught}
+        ghosts={ghosts}
+      />
 
       {/* ✅ 현재 좌표 표시 패널 */}
       {showCoordinates && (
-        <div style={{
-          position: "absolute", bottom: 10, left: 10, right: 10,
-          background: "rgba(0,0,0,0.9)", color: "white",
-          borderRadius: "15px", zIndex: 95,
-          border: "3px solid #FFD700",
-          boxShadow: "0 0 20px rgba(255, 215, 0, 0.3)"
-        }}>
+        <div
+          style={{
+            position: "absolute",
+            bottom: 10,
+            left: 10,
+            right: 10,
+            background: "rgba(0,0,0,0.9)",
+            color: "white",
+            borderRadius: "15px",
+            zIndex: 95,
+            border: "3px solid #FFD700",
+            boxShadow: "0 0 20px rgba(255, 215, 0, 0.3)",
+          }}
+        >
           {/* 헤더 */}
-          <div 
+          <div
             style={{
-              padding: "15px", 
+              padding: "15px",
               borderBottom: "2px solid #FFD700",
-              display: "flex", 
-              justifyContent: "space-between", 
-              alignItems: "center"
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
             }}
             onClick={() => setShowCoordinates(!showCoordinates)}
           >
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "#FFD700" }}>
+            <div
+              style={{ fontSize: "16px", fontWeight: "bold", color: "#FFD700" }}
+            >
               📍 현재 위치 정보
             </div>
-            <div style={{ fontSize: "12px", color: "#ccc" }}>
-              탭해서 접기
-            </div>
+            <div style={{ fontSize: "12px", color: "#ccc" }}>탭해서 접기</div>
           </div>
 
           {/* 좌표 상세 정보 */}
@@ -414,25 +440,50 @@ export default function SimpleAROverlay({ isActive, onClose }) {
             {location ? (
               <div>
                 {/* 메인 좌표 표시 */}
-                <div style={{
-                  background: "rgba(255, 215, 0, 0.1)",
-                  padding: "15px",
-                  borderRadius: "10px",
-                  marginBottom: "15px",
-                  border: "1px solid #FFD700"
-                }}>
-                  <div style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "10px", color: "#FFD700" }}>
+                <div
+                  style={{
+                    background: "rgba(255, 215, 0, 0.1)",
+                    padding: "15px",
+                    borderRadius: "10px",
+                    marginBottom: "15px",
+                    border: "1px solid #FFD700",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "14px",
+                      fontWeight: "bold",
+                      marginBottom: "10px",
+                      color: "#FFD700",
+                    }}
+                  >
                     🌍 GPS 좌표
                   </div>
-                  <div style={{ fontSize: "16px", fontFamily: "monospace", marginBottom: "8px" }}>
-                    <span style={{ color: "#4CAF50" }}>위도:</span> {location.latitude.toFixed(8)}
+                  <div
+                    style={{
+                      fontSize: "16px",
+                      fontFamily: "monospace",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    <span style={{ color: "#4CAF50" }}>위도:</span>{" "}
+                    {location.latitude.toFixed(8)}
                   </div>
-                  <div style={{ fontSize: "16px", fontFamily: "monospace", marginBottom: "10px" }}>
-                    <span style={{ color: "#2196F3" }}>경도:</span> {location.longitude.toFixed(8)}
+                  <div
+                    style={{
+                      fontSize: "16px",
+                      fontFamily: "monospace",
+                      marginBottom: "10px",
+                    }}
+                  >
+                    <span style={{ color: "#2196F3" }}>경도:</span>{" "}
+                    {location.longitude.toFixed(8)}
                   </div>
-                  
+
                   {/* 액션 버튼들 */}
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <div
+                    style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}
+                  >
                     <button
                       onClick={copyCoordinates}
                       style={{
@@ -443,7 +494,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
                         padding: "10px",
                         borderRadius: "8px",
                         fontSize: "12px",
-                        fontWeight: "bold"
+                        fontWeight: "bold",
                       }}
                     >
                       📋 좌표 복사
@@ -458,7 +509,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
                         padding: "10px",
                         borderRadius: "8px",
                         fontSize: "12px",
-                        fontWeight: "bold"
+                        fontWeight: "bold",
                       }}
                     >
                       🗺️ 지도에서 보기
@@ -467,28 +518,51 @@ export default function SimpleAROverlay({ isActive, onClose }) {
                 </div>
 
                 {/* 추가 정보 */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "12px" }}>
-                  <div style={{
-                    background: "rgba(76, 175, 80, 0.1)",
-                    padding: "10px",
-                    borderRadius: "8px",
-                    border: "1px solid #4CAF50"
-                  }}>
-                    <div style={{ color: "#4CAF50", fontWeight: "bold", marginBottom: "5px" }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "10px",
+                    fontSize: "12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      background: "rgba(76, 175, 80, 0.1)",
+                      padding: "10px",
+                      borderRadius: "8px",
+                      border: "1px solid #4CAF50",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#4CAF50",
+                        fontWeight: "bold",
+                        marginBottom: "5px",
+                      }}
+                    >
                       🎯 정확도
                     </div>
                     <div style={{ fontSize: "14px" }}>
                       ±{location.accuracy?.toFixed(0)}m
                     </div>
                   </div>
-                  
-                  <div style={{
-                    background: "rgba(255, 152, 0, 0.1)",
-                    padding: "10px",
-                    borderRadius: "8px",
-                    border: "1px solid #FF9800"
-                  }}>
-                    <div style={{ color: "#FF9800", fontWeight: "bold", marginBottom: "5px" }}>
+
+                  <div
+                    style={{
+                      background: "rgba(255, 152, 0, 0.1)",
+                      padding: "10px",
+                      borderRadius: "8px",
+                      border: "1px solid #FF9800",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#FF9800",
+                        fontWeight: "bold",
+                        marginBottom: "5px",
+                      }}
+                    >
                       ⏰ 업데이트
                     </div>
                     <div style={{ fontSize: "14px" }}>
@@ -498,37 +572,67 @@ export default function SimpleAROverlay({ isActive, onClose }) {
                 </div>
 
                 {/* GPS 유령과의 거리 정보 */}
-                {ghosts.filter(g => g.type === "gps-fixed").length > 0 && (
-                  <div style={{
-                    marginTop: "15px",
-                    background: "rgba(33, 150, 243, 0.1)",
-                    padding: "10px",
-                    borderRadius: "8px",
-                    border: "1px solid #2196F3"
-                  }}>
-                    <div style={{ color: "#2196F3", fontWeight: "bold", marginBottom: "8px" }}>
+                {ghosts.filter((g) => g.type === "gps-fixed").length > 0 && (
+                  <div
+                    style={{
+                      marginTop: "15px",
+                      background: "rgba(33, 150, 243, 0.1)",
+                      padding: "10px",
+                      borderRadius: "8px",
+                      border: "1px solid #2196F3",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#2196F3",
+                        fontWeight: "bold",
+                        marginBottom: "8px",
+                      }}
+                    >
                       👻 GPS 유령과의 거리
                     </div>
-                    {ghosts.filter(g => g.type === "gps-fixed").map((gh, i) => {
-                      const distance = calculateDistance(
-                        location.latitude, location.longitude,
-                        gh.gpsLat, gh.gpsLon
-                      );
-                      return (
-                        <div key={i} style={{ margin: "4px 0", fontSize: "12px" }}>
-                          📍 유령 {i + 1}: <span style={{ color: distance <= 6 ? "#4CAF50" : "#FF9800" }}>
-                            {distance.toFixed(1)}m
-                          </span>
-                          {distance <= 6 && <span style={{ color: "#4CAF50" }}> ✅ 보임</span>}
-                        </div>
-                      );
-                    })}
+                    {ghosts
+                      .filter((g) => g.type === "gps-fixed")
+                      .map((gh, i) => {
+                        const distance = calculateDistance(
+                          location.latitude,
+                          location.longitude,
+                          gh.gpsLat,
+                          gh.gpsLon
+                        );
+                        return (
+                          <div
+                            key={i}
+                            style={{ margin: "4px 0", fontSize: "12px" }}
+                          >
+                            📍 유령 {i + 1}:{" "}
+                            <span
+                              style={{
+                                color: distance <= 6 ? "#4CAF50" : "#FF9800",
+                              }}
+                            >
+                              {distance.toFixed(1)}m
+                            </span>
+                            {distance <= 6 && (
+                              <span style={{ color: "#4CAF50" }}> ✅ 보임</span>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
             ) : (
-              <div style={{ textAlign: "center", padding: "20px", color: "#FF9800" }}>
-                <div style={{ fontSize: "16px", marginBottom: "10px" }}>📍 GPS 위치 확인 중...</div>
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "20px",
+                  color: "#FF9800",
+                }}
+              >
+                <div style={{ fontSize: "16px", marginBottom: "10px" }}>
+                  📍 GPS 위치 확인 중...
+                </div>
                 <div style={{ fontSize: "12px", color: "#ccc" }}>
                   위치 권한을 허용해주세요
                 </div>
@@ -543,10 +647,17 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         <button
           onClick={() => setShowCoordinates(true)}
           style={{
-            position: "absolute", bottom: 20, left: 20,
-            background: "#FFD700", color: "black",
-            border: "none", padding: "12px", borderRadius: "50%",
-            fontSize: "16px", zIndex: 95, fontWeight: "bold"
+            position: "absolute",
+            bottom: 20,
+            left: 20,
+            background: "#FFD700",
+            color: "black",
+            border: "none",
+            padding: "12px",
+            borderRadius: "50%",
+            fontSize: "16px",
+            zIndex: 95,
+            fontWeight: "bold",
           }}
         >
           📍
@@ -555,76 +666,115 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
       {/* 유령 정보 상세 패널 (기존) */}
       {showGhostInfo && (
-        <div style={{
-          position: "absolute", top: 10, right: 10, 
-          background: "rgba(0,0,0,0.9)", color: "white",
-          borderRadius: "10px", zIndex: 90, width: "300px",
-          border: "2px solid #FF6B6B"
-        }}>
+        <div
+          style={{
+            position: "absolute",
+            top: 10,
+            right: 10,
+            background: "rgba(0,0,0,0.9)",
+            color: "white",
+            borderRadius: "10px",
+            zIndex: 90,
+            width: "300px",
+            border: "2px solid #FF6B6B",
+          }}
+        >
           {/* 헤더 */}
-          <div 
+          <div
             style={{
-              padding: "12px", 
+              padding: "12px",
               borderBottom: "1px solid #555",
-              display: "flex", 
-              justifyContent: "space-between", 
-              alignItems: "center"
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
             }}
             onClick={() => setShowGhostInfo(!showGhostInfo)}
           >
-            <div style={{ fontSize: "14px", fontWeight: "bold", color: "#FF6B6B" }}>
+            <div
+              style={{ fontSize: "14px", fontWeight: "bold", color: "#FF6B6B" }}
+            >
               👻 유령 정보 패널
             </div>
-            <div style={{ fontSize: "12px", color: "#ccc" }}>
-              탭해서 접기
-            </div>
+            <div style={{ fontSize: "12px", color: "#ccc" }}>탭해서 접기</div>
           </div>
 
           {/* 각 유령별 상세 정보 */}
           <div style={{ padding: "12px", fontSize: "12px" }}>
             {ghosts.map((gh, i) => {
               const processedGhost = getProcessedGhost(gh, i);
-              
+
               return (
-                <div key={i} style={{
-                  marginBottom: "15px",
-                  padding: "10px",
-                  backgroundColor: 
-                    gh.type === "gps-fixed" ? "rgba(33, 150, 243, 0.2)" :
-                    gh.type === "orientation-fixed" ? "rgba(255, 107, 107, 0.2)" :
-                    "rgba(76, 175, 80, 0.2)",
-                  borderRadius: "8px",
-                  border: `1px solid ${
-                    gh.type === "gps-fixed" ? "#2196F3" :
-                    gh.type === "orientation-fixed" ? "#FF6B6B" :
-                    "#4CAF50"
-                  }`
-                }}>
-                  <div style={{ 
-                    fontWeight: "bold", 
-                    marginBottom: "8px",
-                    color: 
-                      gh.type === "gps-fixed" ? "#2196F3" :
-                      gh.type === "orientation-fixed" ? "#FF6B6B" :
-                      "#4CAF50"
-                  }}>
-                    {gh.type === "gps-fixed" ? "📍" : 
-                     gh.type === "orientation-fixed" ? "🎯" : "👻"} 
+                <div
+                  key={i}
+                  style={{
+                    marginBottom: "15px",
+                    padding: "10px",
+                    backgroundColor:
+                      gh.type === "gps-fixed"
+                        ? "rgba(33, 150, 243, 0.2)"
+                        : gh.type === "orientation-fixed"
+                        ? "rgba(255, 107, 107, 0.2)"
+                        : "rgba(76, 175, 80, 0.2)",
+                    borderRadius: "8px",
+                    border: `1px solid ${
+                      gh.type === "gps-fixed"
+                        ? "#2196F3"
+                        : gh.type === "orientation-fixed"
+                        ? "#FF6B6B"
+                        : "#4CAF50"
+                    }`,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: "bold",
+                      marginBottom: "8px",
+                      color:
+                        gh.type === "gps-fixed"
+                          ? "#2196F3"
+                          : gh.type === "orientation-fixed"
+                          ? "#FF6B6B"
+                          : "#4CAF50",
+                    }}
+                  >
+                    {gh.type === "gps-fixed"
+                      ? "📍"
+                      : gh.type === "orientation-fixed"
+                      ? "🎯"
+                      : "👻"}
                     {gh.title || `유령 ${i + 1}`}
                   </div>
 
                   {/* GPS 유령 정보 */}
                   {gh.type === "gps-fixed" && (
                     <div>
-                      <div>📍 GPS 좌표: {gh.gpsLat.toFixed(6)}, {gh.gpsLon.toFixed(6)}</div>
-                      <div>📏 현재 거리: {processedGhost.currentDistance?.toFixed(1)}m</div>
+                      <div>
+                        📍 GPS 좌표: {gh.gpsLat.toFixed(6)},{" "}
+                        {gh.gpsLon.toFixed(6)}
+                      </div>
+                      <div>
+                        📏 현재 거리:{" "}
+                        {processedGhost.currentDistance?.toFixed(1)}m
+                      </div>
                       <div>🧭 방향: {processedGhost.bearing?.toFixed(0)}°</div>
                       <div>👁️ 최대 가시거리: {gh.maxVisibleDistance}m</div>
-                      <div>🎯 초기 배치: {gh.initialDistance?.toFixed(1)}m, {gh.initialAngle?.toFixed(0)}°</div>
-                      <div style={{ 
-                        color: processedGhost.currentDistance <= gh.maxVisibleDistance ? "#4CAF50" : "#FF9800"
-                      }}>
-                        📺 상태: {processedGhost.currentDistance <= gh.maxVisibleDistance ? "화면에 보임" : "범위 밖"}
+                      <div>
+                        🎯 초기 배치: {gh.initialDistance?.toFixed(1)}m,{" "}
+                        {gh.initialAngle?.toFixed(0)}°
+                      </div>
+                      <div
+                        style={{
+                          color:
+                            processedGhost.currentDistance <=
+                            gh.maxVisibleDistance
+                              ? "#4CAF50"
+                              : "#FF9800",
+                        }}
+                      >
+                        📺 상태:{" "}
+                        {processedGhost.currentDistance <= gh.maxVisibleDistance
+                          ? "화면에 보임"
+                          : "범위 밖"}
                       </div>
                     </div>
                   )}
@@ -635,15 +785,33 @@ export default function SimpleAROverlay({ isActive, onClose }) {
                       <div>🎯 목표 α각도: {gh.targetAlpha.toFixed(0)}°</div>
                       <div>📐 목표 β각도: {gh.targetBeta.toFixed(0)}°</div>
                       <div>⚖️ 허용 오차: ±{gh.tolerance}°</div>
-                      <div>🧭 현재 α각도: {processedGhost.currentAlpha?.toFixed(0)}°</div>
-                      <div>📱 현재 β각도: {processedGhost.currentBeta?.toFixed(0)}°</div>
-                      <div>📏 α 차이: {processedGhost.alphaDiff?.toFixed(0)}°</div>
-                      <div>📏 β 차이: {processedGhost.betaDiff?.toFixed(0)}°</div>
-                      <div>📍 화면 위치: ({gh.pos?.x?.toFixed(1)}%, {gh.pos?.y?.toFixed(1)}%)</div>
-                      <div style={{ 
-                        color: processedGhost.pos?.x > 0 ? "#4CAF50" : "#FF9800"
-                      }}>
-                        📺 상태: {processedGhost.pos?.x > 0 ? "화면에 보임" : "각도 맞지 않음"}
+                      <div>
+                        🧭 현재 α각도: {processedGhost.currentAlpha?.toFixed(0)}
+                        °
+                      </div>
+                      <div>
+                        📱 현재 β각도: {processedGhost.currentBeta?.toFixed(0)}°
+                      </div>
+                      <div>
+                        📏 α 차이: {processedGhost.alphaDiff?.toFixed(0)}°
+                      </div>
+                      <div>
+                        📏 β 차이: {processedGhost.betaDiff?.toFixed(0)}°
+                      </div>
+                      <div>
+                        📍 화면 위치: ({gh.pos?.x?.toFixed(1)}%,{" "}
+                        {gh.pos?.y?.toFixed(1)}%)
+                      </div>
+                      <div
+                        style={{
+                          color:
+                            processedGhost.pos?.x > 0 ? "#4CAF50" : "#FF9800",
+                        }}
+                      >
+                        📺 상태:{" "}
+                        {processedGhost.pos?.x > 0
+                          ? "화면에 보임"
+                          : "각도 맞지 않음"}
                       </div>
                     </div>
                   )}
@@ -651,7 +819,10 @@ export default function SimpleAROverlay({ isActive, onClose }) {
                   {/* 일반 유령 정보 */}
                   {gh.type === "always-visible" && (
                     <div>
-                      <div>📍 현재 위치: ({gh.pos?.x?.toFixed(1)}%, {gh.pos?.y?.toFixed(1)}%)</div>
+                      <div>
+                        📍 현재 위치: ({gh.pos?.x?.toFixed(1)}%,{" "}
+                        {gh.pos?.y?.toFixed(1)}%)
+                      </div>
                       <div>🔄 회전각: {gh.rotation?.toFixed(0)}°</div>
                       <div>📏 크기: {gh.size}px</div>
                       <div>⚡ 이동 속도: {gh.speed}ms</div>
@@ -672,10 +843,16 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         <button
           onClick={() => setShowGhostInfo(true)}
           style={{
-            position: "absolute", top: 20, right: 80,
-            background: "#FF6B6B", color: "white",
-            border: "none", padding: "10px", borderRadius: "8px",
-            fontSize: "12px", zIndex: 90
+            position: "absolute",
+            top: 20,
+            right: 80,
+            background: "#FF6B6B",
+            color: "white",
+            border: "none",
+            padding: "10px",
+            borderRadius: "8px",
+            fontSize: "12px",
+            zIndex: 90,
           }}
         >
           👻 유령 정보 보기
@@ -683,23 +860,32 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       )}
 
       {/* 디버그 패널 (기존) */}
-      <div style={{
-        position: "absolute", top: 10, left: 10,
-        background: "rgba(0,0,0,0.9)", color: "white",
-        borderRadius: "10px", zIndex: 100, width: "250px",
-        border: "2px solid #4CAF50"
-      }}>
-        <div 
+      <div
+        style={{
+          position: "absolute",
+          top: 10,
+          left: 10,
+          background: "rgba(0,0,0,0.9)",
+          color: "white",
+          borderRadius: "10px",
+          zIndex: 100,
+          width: "250px",
+          border: "2px solid #4CAF50",
+        }}
+      >
+        <div
           style={{
-            padding: "12px", 
+            padding: "12px",
             borderBottom: showDebug ? "1px solid #555" : "none",
-            display: "flex", 
-            justifyContent: "space-between", 
-            alignItems: "center"
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
           }}
           onClick={() => setShowDebug(!showDebug)}
         >
-          <div style={{ fontSize: "14px", fontWeight: "bold", color: "#4CAF50" }}>
+          <div
+            style={{ fontSize: "14px", fontWeight: "bold", color: "#4CAF50" }}
+          >
             🔍 디버그 정보 {showDebug ? "▼" : "▶"}
           </div>
           <div style={{ fontSize: "12px", color: "#ccc" }}>
@@ -710,33 +896,60 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         {showDebug && (
           <div style={{ padding: "12px", fontSize: "12px" }}>
             <div style={{ marginBottom: "10px" }}>
-              <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: "5px" }}>
+              <div
+                style={{
+                  color: "#FFD700",
+                  fontWeight: "bold",
+                  marginBottom: "5px",
+                }}
+              >
                 📊 현재 상태
               </div>
-              <div>🧭 방향: α={Math.round(orientation.alpha)}° β={Math.round(orientation.beta)}°</div>
-              <div>📍 GPS: {location ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` : "위치 확인 중..."}</div>
+              <div>
+                🧭 방향: α={Math.round(orientation.alpha)}° β=
+                {Math.round(orientation.beta)}°
+              </div>
+              <div>
+                📍 GPS:{" "}
+                {location
+                  ? `${location.latitude.toFixed(
+                      6
+                    )}, ${location.longitude.toFixed(6)}`
+                  : "위치 확인 중..."}
+              </div>
               <div>🎯 정확도: {location?.accuracy?.toFixed(0)}m</div>
               <div>👻 전체 유령: {ghosts.length}마리</div>
             </div>
 
             <div>
-              <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: "5px" }}>
+              <div
+                style={{
+                  color: "#FFD700",
+                  fontWeight: "bold",
+                  marginBottom: "5px",
+                }}
+              >
                 📝 최근 로그 (최근 3개)
               </div>
-              <div style={{
-                maxHeight: "100px", 
-                overflowY: "auto",
-                backgroundColor: "rgba(255,255,255,0.1)",
-                borderRadius: "4px",
-                padding: "5px"
-              }}>
+              <div
+                style={{
+                  maxHeight: "100px",
+                  overflowY: "auto",
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                  borderRadius: "4px",
+                  padding: "5px",
+                }}
+              >
                 {debugLogs.slice(-3).map((log, i) => (
                   <div key={i} style={{ margin: "2px 0", fontSize: "10px" }}>
-                    <span style={{ color: "#888" }}>[{log.time}]</span> {log.message}
+                    <span style={{ color: "#888" }}>[{log.time}]</span>{" "}
+                    {log.message}
                   </div>
                 ))}
                 {debugLogs.length === 0 && (
-                  <div style={{ color: "#888", fontSize: "10px" }}>로그 없음</div>
+                  <div style={{ color: "#888", fontSize: "10px" }}>
+                    로그 없음
+                  </div>
                 )}
               </div>
             </div>
