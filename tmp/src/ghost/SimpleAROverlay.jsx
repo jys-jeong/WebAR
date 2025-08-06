@@ -50,8 +50,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         360 - Math.abs(orientation.alpha - ghost.targetAlpha)
       );
       const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
-      const inView =
-        alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
+      const inView = alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
 
       if (!inView) {
         return { ...ghost, pos: { x: -100, y: -100 } };
@@ -59,7 +58,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       return ghost;
     }
 
-    // GPS 유령은 항상 숨김 (거리 정보만 저장)
+    // ✅ GPS 유령: 반경 내에 들어오면 이미지 표시
     if (ghost.type === "gps-fixed" && location) {
       const distance = calculateDistance(
         location.latitude,
@@ -68,12 +67,23 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         ghost.gpsLon
       );
 
-      console.log(`👻 GPS 유령 ${index}: 현재 거리 ${distance.toFixed(1)}m`);
+      const maxDistance = ghost.maxVisibleDistance || 6; // 6m 반경
+      
+      console.log(`👻 GPS 유령 ${index}: 거리 ${distance.toFixed(1)}m, 최대 ${maxDistance}m`);
 
+      // 반경 밖이면 숨김
+      if (distance > maxDistance) {
+        return { ...ghost, pos: { x: -100, y: -100 } };
+      }
+
+      // 반경 안이면 이미지 표시 + 거리에 따른 크기 조정
+      const sizeScale = Math.max(0.5, 3 / Math.max(distance, 1));
+      
       return {
         ...ghost,
-        pos: { x: -100, y: -100 }, // 이미지 숨김
-        currentDistance: distance.toFixed(1),
+        size: ghost.size * sizeScale,
+        distance: distance.toFixed(1),
+        opacity: Math.max(0.7, 1 - distance / maxDistance)
       };
     }
 
@@ -83,13 +93,14 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   // AR 열릴 때 한 번만 게임 리셋
   useEffect(() => {
     if (isActive) {
-      if (location) {
+      // 처음 한 번만 게임 시작
+      if (location && ghosts.length === 0) {
         resetGame(location);
-      } else {
+      } else if (!location && ghosts.length === 0) {
         resetGame();
       }
     }
-  }, [isActive]);
+  }, [isActive, location]);
 
   // 카메라 설정
   useEffect(() => {
@@ -236,14 +247,47 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
 
-      {/* 유령 렌더링 (GPS 유령 제외) */}
+      {/* ✅ 모든 타입의 유령 렌더링 (GPS 유령 포함) */}
       {ghosts.map((gh, i) => {
         const processedGhost = getProcessedGhost(gh, i);
-
-        if (gh.type === "gps-fixed") {
-          return null; // GPS 유령은 이미지 렌더링 안함
+        
+        // 화면 밖에 있으면 렌더링 안함
+        if (processedGhost.pos.x < 0) {
+          return null;
         }
 
+        // GPS 유령에 거리 표시 추가
+        if (gh.type === "gps-fixed" && processedGhost.distance) {
+          return (
+            <div key={`ghost-wrapper-${i}`} style={{ position: 'relative' }}>
+              <Ghost
+                gh={processedGhost}
+                idx={i}
+                onClick={() => catchGhost(i)}
+              />
+              {/* 거리 표시 */}
+              <div style={{
+                position: 'absolute',
+                left: `${processedGhost.pos.x}%`,
+                top: `${processedGhost.pos.y - 8}%`,
+                transform: 'translate(-50%, -100%)',
+                background: 'rgba(255,215,0,0.9)',
+                color: 'black',
+                padding: '4px 8px',
+                borderRadius: '12px',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                zIndex: 25 + i,
+                pointerEvents: 'none',
+                border: '1px solid #FFD700'
+              }}>
+                📍 {processedGhost.distance}m
+              </div>
+            </div>
+          );
+        }
+
+        // 다른 타입 유령들
         return (
           <Ghost
             key={`ghost-${i}`}
@@ -254,152 +298,96 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         );
       })}
 
-      <ScorePanel left={ghosts.filter(g => g.type !== "gps-fixed").length} score={score} total={totalCaught} />
+      <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
 
-      {/* ✅ GPS 유령 실시간 거리 표시 (단일 UI) */}
+      {/* ✅ GPS 유령 상태 안내 */}
       {location && ghosts.filter((g) => g.type === "gps-fixed").length > 0 && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 120,
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "rgba(33, 150, 243, 0.95)",
-            color: "white",
-            padding: "20px",
-            borderRadius: "15px",
-            textAlign: "center",
-            fontSize: "14px",
-            zIndex: 60,
-            minWidth: "280px",
-            border: "3px solid #2196F3",
-            boxShadow: "0 4px 20px rgba(33, 150, 243, 0.3)",
-          }}
-        >
-          <div
-            style={{
-              color: "#E3F2FD",
-              fontWeight: "bold",
-              marginBottom: "15px",
-              fontSize: "16px",
-            }}
-          >
-            🎯 숨겨진 보물들
+        <div style={{
+          position: "absolute", bottom: 120, left: "50%",
+          transform: "translateX(-50%)",
+          background: "rgba(33, 150, 243, 0.95)", color: "white",
+          padding: "20px", borderRadius: "15px", textAlign: "center",
+          fontSize: "14px", zIndex: 60, minWidth: "280px",
+          border: "3px solid #2196F3"
+        }}>
+          <div style={{ color: "#E3F2FD", fontWeight: "bold", marginBottom: "15px" }}>
+            👻 GPS 유령들
           </div>
-          {ghosts
-            .filter((g) => g.type === "gps-fixed")
-            .map((gh, i) => {
-              const distance = calculateDistance(
-                location.latitude,
-                location.longitude,
-                gh.gpsLat,
-                gh.gpsLon
-              );
+          {ghosts.filter((g) => g.type === "gps-fixed").map((gh, i) => {
+            const distance = calculateDistance(
+              location.latitude, location.longitude,
+              gh.gpsLat, gh.gpsLon
+            );
+            
+            // 방향 계산
+            const dLat = gh.gpsLat - location.latitude;
+            const dLon = gh.gpsLon - location.longitude;
+            const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI;
+            const normalizedBearing = (bearing + 360) % 360;
+            const directions = ["북", "북동", "동", "남동", "남", "남서", "서", "북서"];
+            const directionIndex = Math.round(normalizedBearing / 45) % 8;
+            const direction = directions[directionIndex];
 
-              // 방향 계산
-              const dLat = gh.gpsLat - location.latitude;
-              const dLon = gh.gpsLon - location.longitude;
-              const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI;
-              const normalizedBearing = (bearing + 360) % 360;
-              const directions = [
-                "북", "북동", "동", "남동", "남", "남서", "서", "북서",
-              ];
-              const directionIndex = Math.round(normalizedBearing / 45) % 8;
-              const direction = directions[directionIndex];
+            // 가시성 상태에 따른 표시
+            const maxDistance = gh.maxVisibleDistance || 6;
+            let statusColor, statusText, statusIcon;
+            
+            if (distance <= maxDistance) {
+              statusColor = "#4CAF50";
+              statusText = "화면에 보임!";
+              statusIcon = "👻";
+            } else if (distance < maxDistance + 2) {
+              statusColor = "#FF9800";
+              statusText = "거의 다 왔음";
+              statusIcon = "🔥";
+            } else {
+              statusColor = "#9E9E9E";
+              statusText = "너무 멀어서 안 보임";
+              statusIcon = "📍";
+            }
 
-              // 거리에 따른 상태 표시
-              let statusColor, statusText, statusIcon;
-              if (distance < 2) {
-                statusColor = "#4CAF50";
-                statusText = "바로 여기!";
-                statusIcon = "🎉";
-              } else if (distance < 5) {
-                statusColor = "#FF9800";
-                statusText = "매우 가까움";
-                statusIcon = "🔥";
-              } else if (distance < 10) {
-                statusColor = "#2196F3";
-                statusText = "가까움";
-                statusIcon = "⚡";
-              } else {
-                statusColor = "#9E9E9E";
-                statusText = "멀음";
-                statusIcon = "📍";
-              }
-
-              return (
-                <div
-                  key={i}
-                  style={{
-                    margin: "10px 0",
-                    padding: "12px 15px",
-                    borderRadius: "12px",
-                    backgroundColor: "rgba(255, 255, 255, 0.1)",
-                    border: `2px solid ${statusColor}`,
-                    color: "white",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "5px",
-                    }}
-                  >
-                    <span style={{ fontSize: "16px", fontWeight: "bold" }}>
-                      {statusIcon} 보물 {i + 1}
-                    </span>
-                    <span
-                      style={{
-                        color: statusColor,
-                        fontSize: "18px",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      {distance.toFixed(1)}m
-                    </span>
-                  </div>
-                  <div style={{ fontSize: "12px", opacity: 0.8 }}>
-                    📍 <strong>{direction}</strong> 방향 • <span style={{ color: statusColor }}>{statusText}</span>
-                  </div>
+            return (
+              <div key={i} style={{
+                margin: "10px 0", padding: "12px 15px", borderRadius: "12px",
+                backgroundColor: "rgba(255, 255, 255, 0.1)",
+                border: `2px solid ${statusColor}`, color: "white"
+              }}>
+                <div style={{
+                  display: "flex", justifyContent: "space-between",
+                  alignItems: "center", marginBottom: "5px"
+                }}>
+                  <span style={{ fontSize: "16px", fontWeight: "bold" }}>
+                    {statusIcon} 유령 {i + 1}
+                  </span>
+                  <span style={{ color: statusColor, fontSize: "18px", fontWeight: "bold" }}>
+                    {distance.toFixed(1)}m
+                  </span>
                 </div>
-              );
-            })}
-          <div
-            style={{
-              fontSize: "11px",
-              color: "#B3E5FC",
-              marginTop: "15px",
-              padding: "8px",
-              backgroundColor: "rgba(255, 255, 255, 0.1)",
-              borderRadius: "8px",
-            }}
-          >
-            🚶‍♂️ 2m 이내에 도달하면 보물 획득!
+                <div style={{ fontSize: "12px", opacity: 0.8 }}>
+                  📍 <strong>{direction}</strong> 방향 • <span style={{ color: statusColor }}>{statusText}</span>
+                </div>
+              </div>
+            );
+          })}
+          <div style={{
+            fontSize: "11px", color: "#B3E5FC", marginTop: "15px",
+            padding: "8px", backgroundColor: "rgba(255, 255, 255, 0.1)",
+            borderRadius: "8px"
+          }}>
+            🚶‍♂️ {ghosts.find(g => g.type === "gps-fixed")?.maxVisibleDistance || 6}m 이내에 들어가면 유령이 나타납니다!
           </div>
         </div>
       )}
 
       {/* 디버그 정보 패널 */}
       {supported && (
-        <div
-          style={{
-            position: "absolute",
-            top: 100,
-            left: 20,
-            background: "rgba(0,0,0,0.8)",
-            color: "white",
-            padding: "12px",
-            borderRadius: "8px",
-            fontSize: "11px",
-            zIndex: 50,
-            minWidth: "200px",
-          }}
-        >
-          <div>
-            🧭 현재: α={Math.round(orientation.alpha)}° β={Math.round(orientation.beta)}°
-          </div>
+        <div style={{
+          position: "absolute", top: 100, left: 20,
+          background: "rgba(0,0,0,0.8)", color: "white",
+          padding: "12px", borderRadius: "8px", fontSize: "11px",
+          zIndex: 50, minWidth: "200px",
+        }}>
+          <div>🧭 현재: α={Math.round(orientation.alpha)}° β={Math.round(orientation.beta)}°</div>
 
           {/* GPS 실시간 정보 */}
           {location && (
@@ -486,7 +474,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         ×
       </button>
 
-      {ghosts.filter(g => g.type !== "gps-fixed").length === 0 && (
+      {ghosts.length === 0 && (
         <div
           style={{
             position: "absolute",
