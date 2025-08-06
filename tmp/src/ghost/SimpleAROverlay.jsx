@@ -42,15 +42,16 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   const calculateBearing = (lat1, lon1, lat2, lon2) => {
     const toRad = (deg) => (deg * Math.PI) / 180;
     const toDeg = (rad) => (rad * 180) / Math.PI;
-    
+
     const dLon = toRad(lon2 - lon1);
     const lat1Rad = toRad(lat1);
     const lat2Rad = toRad(lat2);
-    
+
     const y = Math.sin(dLon) * Math.cos(lat2Rad);
-    const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - 
-              Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
-    
+    const x =
+      Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+      Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+
     let bearing = toDeg(Math.atan2(y, x));
     return (bearing + 360) % 360; // 0-360도 범위로 정규화
   };
@@ -59,13 +60,13 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   const isInCameraView = (ghostBearing, cameraBearing, fov = 60) => {
     // 카메라 시야각의 절반
     const halfFov = fov / 2;
-    
+
     // 두 각도의 차이 계산 (최단거리)
     let angleDiff = Math.abs(ghostBearing - cameraBearing);
     if (angleDiff > 180) {
       angleDiff = 360 - angleDiff;
     }
-    
+
     return angleDiff <= halfFov;
   };
 
@@ -80,7 +81,8 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         360 - Math.abs(orientation.alpha - ghost.targetAlpha)
       );
       const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
-      const inView = alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
+      const inView =
+        alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
 
       if (!inView) {
         return { ...ghost, pos: { x: -100, y: -100 } };
@@ -107,7 +109,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
           ...ghost,
           pos: { x: -100, y: -100 },
           currentDistance: distance,
-          reason: "거리 초과"
+          reason: "거리 초과",
         };
       }
 
@@ -125,7 +127,11 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       // ✅ 카메라 시야각 내에 있는지 확인
       const inView = isInCameraView(ghostBearing, cameraBearing, 60); // 60도 시야각
 
-      console.log(`📹 카메라 방향: ${cameraBearing.toFixed(0)}°, 유령 방향: ${ghostBearing.toFixed(0)}°, 시야 내: ${inView}`);
+      console.log(
+        `📹 카메라 방향: ${cameraBearing.toFixed(
+          0
+        )}°, 유령 방향: ${ghostBearing.toFixed(0)}°, 시야 내: ${inView}`
+      );
 
       if (!inView) {
         return {
@@ -134,7 +140,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
           currentDistance: distance,
           ghostBearing: ghostBearing,
           cameraBearing: cameraBearing,
-          reason: "시야각 밖"
+          reason: "시야각 밖",
         };
       }
 
@@ -159,7 +165,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         currentDistance: distance,
         ghostBearing: ghostBearing,
         cameraBearing: cameraBearing,
-        reason: "표시됨"
+        reason: "표시됨",
       };
     }
 
@@ -217,7 +223,10 @@ export default function SimpleAROverlay({ isActive, onClose }) {
               return prevGhosts;
 
             // 기존 움직임 로직...
-            const pattern = movementPatterns[Math.floor(Math.random() * movementPatterns.length)];
+            const pattern =
+              movementPatterns[
+                Math.floor(Math.random() * movementPatterns.length)
+              ];
             let { x, y } = newGhosts[index].pos;
             const now = Date.now();
 
@@ -236,8 +245,20 @@ export default function SimpleAROverlay({ isActive, onClose }) {
             newGhosts[index] = {
               ...newGhosts[index],
               pos: { x, y },
-              size: Math.random() < 0.2 ? Math.max(80, Math.min(250, newGhosts[index].size + (Math.random() - 0.5) * 30)) : newGhosts[index].size,
-              rotation: Math.random() < 0.15 ? (newGhosts[index].rotation + Math.random() * 60) % 360 : newGhosts[index].rotation,
+              size:
+                Math.random() < 0.2
+                  ? Math.max(
+                      80,
+                      Math.min(
+                        250,
+                        newGhosts[index].size + (Math.random() - 0.5) * 30
+                      )
+                    )
+                  : newGhosts[index].size,
+              rotation:
+                Math.random() < 0.15
+                  ? (newGhosts[index].rotation + Math.random() * 60) % 360
+                  : newGhosts[index].rotation,
             };
 
             return newGhosts;
@@ -310,35 +331,102 @@ export default function SimpleAROverlay({ isActive, onClose }) {
             minWidth: "250px",
           }}
         >
-          <div style={{ color: "#4CAF50", fontWeight: "bold", marginBottom: "8px" }}>
+          <div
+            style={{
+              color: "#4CAF50",
+              fontWeight: "bold",
+              marginBottom: "8px",
+            }}
+          >
             🌍 AR 카메라 정보
           </div>
-          <div>📍 내 위치: {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}</div>
+          <div>
+            📍 내 위치: {location.latitude.toFixed(6)},{" "}
+            {location.longitude.toFixed(6)}
+          </div>
           <div>🧭 카메라 방향: {compass.heading.toFixed(0)}°</div>
           <div>🎯 시야각: 60° (좌우 30°씩)</div>
 
           <hr style={{ margin: "8px 0", border: "1px solid #555" }} />
 
+          {/* ✅ 회전 유령 정보 추가 */}
+          {ghosts
+            .filter((g) => g.type === "orientation-fixed")
+            .map((gh, i) => {
+              const processedGhost = getProcessedGhost(gh, i);
+              const isVisible = processedGhost.pos && processedGhost.pos.x > 0;
+
+              return (
+                <div key={`orientation-${i}`} style={{ marginBottom: "12px" }}>
+                  <div style={{ color: "#FF6B6B", fontWeight: "bold" }}>
+                    🎯 회전감지 유령
+                  </div>
+                  <div>📐 목표 α각도: {gh.targetAlpha.toFixed(0)}°</div>
+                  <div>📐 목표 β각도: {gh.targetBeta.toFixed(0)}°</div>
+                  <div>⚖️ 허용 오차: ±{gh.tolerance}°</div>
+                  <div>📱 현재 α각도: {orientation.alpha.toFixed(0)}°</div>
+                  <div>📱 현재 β각도: {orientation.beta.toFixed(0)}°</div>
+
+                  {/* 각도 차이 계산 및 표시 */}
+                  {(() => {
+                    const alphaDiff = Math.min(
+                      Math.abs(orientation.alpha - gh.targetAlpha),
+                      360 - Math.abs(orientation.alpha - gh.targetAlpha)
+                    );
+                    const betaDiff = Math.abs(orientation.beta - gh.targetBeta);
+
+                    return (
+                      <>
+                        <div>📏 α 차이: {alphaDiff.toFixed(0)}°</div>
+                        <div>📏 β 차이: {betaDiff.toFixed(0)}°</div>
+                        <div
+                          style={{
+                            color: isVisible ? "#4CAF50" : "#FF9800",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          📺 상태: {isVisible ? "👁️ 보임" : "❌ 각도 불일치"}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              );
+            })}
+
           {/* GPS 유령 정보 */}
-          {ghosts.filter(g => g.type === "gps-fixed").map((gh, i) => {
-            const processedGhost = getProcessedGhost(gh, i);
-            
-            return (
-              <div key={i} style={{ marginTop: "8px" }}>
-                <div style={{ color: "#FFD700", fontWeight: "bold" }}>
-                  👻 특정 위치 유령
+          {ghosts
+            .filter((g) => g.type === "gps-fixed")
+            .map((gh, i) => {
+              const processedGhost = getProcessedGhost(gh, i);
+
+              return (
+                <div key={i} style={{ marginTop: "8px" }}>
+                  <div style={{ color: "#FFD700", fontWeight: "bold" }}>
+                    👻 특정 위치 유령
+                  </div>
+                  <div>
+                    📍 유령 위치: {gh.gpsLat}, {gh.gpsLon}
+                  </div>
+                  <div>
+                    📏 거리: {processedGhost.currentDistance?.toFixed(1)}m
+                  </div>
+                  <div>
+                    🧭 유령 방향: {processedGhost.ghostBearing?.toFixed(0)}°
+                  </div>
+                  <div
+                    style={{
+                      color:
+                        processedGhost.reason === "표시됨"
+                          ? "#4CAF50"
+                          : "#FF9800",
+                    }}
+                  >
+                    📺 상태: {processedGhost.reason}
+                  </div>
                 </div>
-                <div>📍 유령 위치: {gh.gpsLat}, {gh.gpsLon}</div>
-                <div>📏 거리: {processedGhost.currentDistance?.toFixed(1)}m</div>
-                <div>🧭 유령 방향: {processedGhost.ghostBearing?.toFixed(0)}°</div>
-                <div style={{ 
-                  color: processedGhost.reason === "표시됨" ? "#4CAF50" : "#FF9800" 
-                }}>
-                  📺 상태: {processedGhost.reason}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       )}
 
@@ -346,8 +434,10 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       {!supported && (
         <button
           onClick={() => {
-            if (typeof DeviceOrientationEvent !== "undefined" && 
-                typeof DeviceOrientationEvent.requestPermission === "function") {
+            if (
+              typeof DeviceOrientationEvent !== "undefined" &&
+              typeof DeviceOrientationEvent.requestPermission === "function"
+            ) {
               DeviceOrientationEvent.requestPermission();
             }
           }}
@@ -417,11 +507,21 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
       <style jsx>{`
         @keyframes ghostCatch {
-          0% { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
-          25% { transform: translate(-50%, -50%) scale(1.3) rotate(90deg); }
-          50% { transform: translate(-50%, -50%) scale(1.1) rotate(180deg); }
-          75% { transform: translate(-50%, -50%) scale(1.2) rotate(270deg); }
-          100% { transform: translate(-50%, -50%) scale(0) rotate(360deg); }
+          0% {
+            transform: translate(-50%, -50%) scale(1) rotate(0deg);
+          }
+          25% {
+            transform: translate(-50%, -50%) scale(1.3) rotate(90deg);
+          }
+          50% {
+            transform: translate(-50%, -50%) scale(1.1) rotate(180deg);
+          }
+          75% {
+            transform: translate(-50%, -50%) scale(1.2) rotate(270deg);
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(0) rotate(360deg);
+          }
         }
       `}</style>
     </div>
