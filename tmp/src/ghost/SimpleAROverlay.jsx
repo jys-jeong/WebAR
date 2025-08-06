@@ -5,7 +5,7 @@ import useDeviceOrientation from "./useDeviceOrientation";
 import useGeoLocation from "./useGeoLocation";
 import Ghost from "./Ghost";
 import ScorePanel from "./ScorePanel";
-import useCompass from "./useCompass";
+
 const TICK = 100;
 
 export default function SimpleAROverlay({ isActive, onClose }) {
@@ -14,7 +14,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
   const { orientation, supported } = useDeviceOrientation();
   const { location } = useGeoLocation();
-  const { compass } = useCompass();
+
   const [lastLocation, setLastLocation] = useState(null);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebug, setShowDebug] = useState(true);
@@ -100,57 +100,34 @@ export default function SimpleAROverlay({ isActive, onClose }) {
     }
 
     // GPS 유령: 반경 내에 들어오면 이미지 표시
-    if (ghost.type === "location-direction" && location && compass) {
-      // GPS 거리 조건 확인
+    if (ghost.type === "gps-fixed" && location) {
       const distance = calculateDistance(
         location.latitude,
         location.longitude,
-        ghost.targetLat,
-        ghost.targetLon
+        ghost.gpsLat,
+        ghost.gpsLon
       );
 
-      const locationInRange = distance <= ghost.locationTolerance;
+      const maxDistance = ghost.maxVisibleDistance || 100;
 
-      // 나침반 방향 조건 확인
-      const compassDiff = Math.min(
-        Math.abs(compass.heading - ghost.targetCompass),
-        360 - Math.abs(compass.heading - ghost.targetCompass)
-      );
-      const directionInRange = compassDiff <= ghost.compassTolerance;
-
-      addDebugLog(
-        `위치+방향 유령: 거리 ${distance.toFixed(1)}m/${
-          ghost.locationTolerance
-        }m, 방향 ${compass.heading.toFixed(0)}°/${
-          ghost.targetCompass
-        }° (차이: ${compassDiff.toFixed(0)}°)`
-      );
-
-      // ✅ 두 조건 모두 만족해야 보임
-      if (!locationInRange || !directionInRange) {
+      if (distance > maxDistance) {
         return {
           ...ghost,
           pos: { x: -100, y: -100 },
           currentDistance: distance,
-          currentCompass: compass.heading,
-          compassDiff: compassDiff,
-          locationInRange: locationInRange,
-          directionInRange: directionInRange,
         };
       }
 
-      // 두 조건 모두 만족하면 화면에 표시
+      // ✅ GPS 유령은 항상 고정된 화면 위치에 표시
       return {
         ...ghost,
-        pos: { x: 50, y: 50 }, // 화면 중앙
-        size: ghost.size * 2.0, // 크게 표시
+        pos: { x: 50, y: 50 }, // ✅ 화면 중앙 고정
+        size: ghost.size * 1.5,
         distance: distance.toFixed(1),
-        opacity: 0.95,
+        opacity: 0.9,
         currentDistance: distance,
-        currentCompass: compass.heading,
-        compassDiff: compassDiff,
-        locationInRange: locationInRange,
-        directionInRange: directionInRange,
+        // ✅ 회전도 고정
+        rotation: ghost.rotation || 0,
       };
     }
 
@@ -681,6 +658,178 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       )}
 
       {/* 유령 정보 상세 패널 (기존) */}
+      {showGhostInfo && (
+        <div
+          style={{
+            position: "absolute",
+            top: 10,
+            right: 10,
+            background: "rgba(0,0,0,0.9)",
+            color: "white",
+            borderRadius: "10px",
+            zIndex: 90,
+            width: "300px",
+            border: "2px solid #FF6B6B",
+          }}
+        >
+          {/* 헤더 */}
+          <div
+            style={{
+              padding: "12px",
+              borderBottom: "1px solid #555",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+            onClick={() => setShowGhostInfo(!showGhostInfo)}
+          >
+            <div
+              style={{ fontSize: "14px", fontWeight: "bold", color: "#FF6B6B" }}
+            >
+              👻 유령 정보 패널
+            </div>
+            <div style={{ fontSize: "12px", color: "#ccc" }}>탭해서 접기</div>
+          </div>
+
+          {/* 각 유령별 상세 정보 */}
+          <div style={{ padding: "12px", fontSize: "12px" }}>
+            {ghosts.map((gh, i) => {
+              const processedGhost = getProcessedGhost(gh, i);
+
+              return (
+                <div
+                  key={i}
+                  style={{
+                    marginBottom: "15px",
+                    padding: "10px",
+                    backgroundColor:
+                      gh.type === "gps-fixed"
+                        ? "rgba(33, 150, 243, 0.2)"
+                        : gh.type === "orientation-fixed"
+                        ? "rgba(255, 107, 107, 0.2)"
+                        : "rgba(76, 175, 80, 0.2)",
+                    borderRadius: "8px",
+                    border: `1px solid ${
+                      gh.type === "gps-fixed"
+                        ? "#2196F3"
+                        : gh.type === "orientation-fixed"
+                        ? "#FF6B6B"
+                        : "#4CAF50"
+                    }`,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: "bold",
+                      marginBottom: "8px",
+                      color:
+                        gh.type === "gps-fixed"
+                          ? "#2196F3"
+                          : gh.type === "orientation-fixed"
+                          ? "#FF6B6B"
+                          : "#4CAF50",
+                    }}
+                  >
+                    {gh.type === "gps-fixed"
+                      ? "📍"
+                      : gh.type === "orientation-fixed"
+                      ? "🎯"
+                      : "👻"}
+                    {gh.title || `유령 ${i + 1}`}
+                  </div>
+
+                  {/* GPS 유령 정보 */}
+                  {gh.type === "gps-fixed" && (
+                    <div>
+                      <div>
+                        📍 GPS 좌표: {gh.gpsLat.toFixed(6)},{" "}
+                        {gh.gpsLon.toFixed(6)}
+                      </div>
+                      <div>
+                        📏 현재 거리:{" "}
+                        {processedGhost.currentDistance?.toFixed(1)}m
+                      </div>
+                      <div>🧭 방향: {processedGhost.bearing?.toFixed(0)}°</div>
+                      <div>👁️ 최대 가시거리: {gh.maxVisibleDistance}m</div>
+                      <div>
+                        🎯 초기 배치: {gh.initialDistance?.toFixed(1)}m,{" "}
+                        {gh.initialAngle?.toFixed(0)}°
+                      </div>
+                      <div
+                        style={{
+                          color:
+                            processedGhost.currentDistance <=
+                            gh.maxVisibleDistance
+                              ? "#4CAF50"
+                              : "#FF9800",
+                        }}
+                      >
+                        📺 상태:{" "}
+                        {processedGhost.currentDistance <= gh.maxVisibleDistance
+                          ? "화면에 보임"
+                          : "범위 밖"}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 회전 감지 유령 정보 */}
+                  {gh.type === "orientation-fixed" && (
+                    <div>
+                      <div>🎯 목표 α각도: {gh.targetAlpha.toFixed(0)}°</div>
+                      <div>📐 목표 β각도: {gh.targetBeta.toFixed(0)}°</div>
+                      <div>⚖️ 허용 오차: ±{gh.tolerance}°</div>
+                      <div>
+                        🧭 현재 α각도: {processedGhost.currentAlpha?.toFixed(0)}
+                        °
+                      </div>
+                      <div>
+                        📱 현재 β각도: {processedGhost.currentBeta?.toFixed(0)}°
+                      </div>
+                      <div>
+                        📏 α 차이: {processedGhost.alphaDiff?.toFixed(0)}°
+                      </div>
+                      <div>
+                        📏 β 차이: {processedGhost.betaDiff?.toFixed(0)}°
+                      </div>
+                      <div>
+                        📍 화면 위치: ({gh.pos?.x?.toFixed(1)}%,{" "}
+                        {gh.pos?.y?.toFixed(1)}%)
+                      </div>
+                      <div
+                        style={{
+                          color:
+                            processedGhost.pos?.x > 0 ? "#4CAF50" : "#FF9800",
+                        }}
+                      >
+                        📺 상태:{" "}
+                        {processedGhost.pos?.x > 0
+                          ? "화면에 보임"
+                          : "각도 맞지 않음"}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 일반 유령 정보 */}
+                  {gh.type === "always-visible" && (
+                    <div>
+                      <div>
+                        📍 현재 위치: ({gh.pos?.x?.toFixed(1)}%,{" "}
+                        {gh.pos?.y?.toFixed(1)}%)
+                      </div>
+                      <div>🔄 회전각: {gh.rotation?.toFixed(0)}°</div>
+                      <div>📏 크기: {gh.size}px</div>
+                      <div>⚡ 이동 속도: {gh.speed}ms</div>
+                      <div style={{ color: "#4CAF50" }}>
+                        📺 상태: 항상 보임 (움직임)
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 유령 정보 토글 버튼 (접었을 때) */}
       {!showGhostInfo && (
