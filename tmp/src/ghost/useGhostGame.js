@@ -22,7 +22,7 @@ export default function useGhostGame() {
   const resetGame = useCallback((userLocation) => {
     let newGhosts = [];
 
-    // 기존 회전감지 유령
+    // 🎯 orientation-fixed 유령 1마리
     newGhosts.push({
       ...createRandomGhost(),
       type: "orientation-fixed",
@@ -32,37 +32,32 @@ export default function useGhostGame() {
       title: "회전감지 유령",
     });
 
-    // ✅ GPS 유령 - 현재 위치 바로 그 자리에 배치
-    const baseLocation = {
-      latitude: 35.20517490, // 서울시청 (GPS 없을 때 기본값)
-      longitude: 126.81175610,
-    };
-
-    newGhosts.push({
-      ...createRandomGhost(),
-      type: "gps-fixed",
-      gpsLat: baseLocation.latitude, // ✅ 정확히 같은 위도
-      gpsLon: baseLocation.longitude, // ✅ 정확히 같은 경도
-      maxVisibleDistance: 100, // ✅ 100m 반경 (넉넉하게)
-      speed: 0,
-      isFixed: true,
-      title: "내 위치 GPS 유령",
-    });
-
-    // 기존 일반 유령
+    // 👻 always-visible 유령 1마리
     newGhosts.push({
       ...createRandomGhost(),
       type: "always-visible",
       title: "일반 유령",
     });
 
+    // ✅ 새로운 타입: location-direction 유령 (위치 + 방향 조건)
+    if (userLocation) {
+      newGhosts.push({
+        ...createRandomGhost(),
+        type: "location-direction",
+        // GPS 조건
+        targetLat: userLocation.latitude + 0.000045, // 북쪽 5m
+        targetLon: userLocation.longitude + 0.000045, // 동쪽 5m
+        locationTolerance: 10, // 10m 이내
+        // 방향 조건
+        targetCompass: 45, // 북동쪽 45도
+        compassTolerance: 15, // ±15도 허용
+        title: "위치+방향 유령",
+      });
+    }
+
     setGhosts(newGhosts);
     setScore(0);
     setTotalCaught(0);
-
-    console.log(
-      `🎮 현재 위치에 GPS 유령 생성: ${baseLocation.latitude}, ${baseLocation.longitude}`
-    );
   }, []);
 
   const catchGhost = (index) => {

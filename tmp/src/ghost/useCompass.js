@@ -1,4 +1,4 @@
-// hooks/useCompass.js (새 파일)
+// hooks/useCompass.js
 import { useState, useEffect } from 'react';
 
 export default function useCompass() {
@@ -10,8 +10,8 @@ export default function useCompass() {
       setSupported(true);
 
       const handleOrientation = (event) => {
-        // ✅ 나침반 방향 계산 (0도 = 북쪽)
-        let heading = event.alpha; // 0~360도
+        // 나침반 방향 계산 (0도 = 북쪽)
+        let heading = event.alpha;
         
         if (heading !== null) {
           // 안드로이드와 iOS 호환성 처리
