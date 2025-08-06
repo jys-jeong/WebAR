@@ -33,9 +33,9 @@ export default function useGhostGame() {
     });
 
     // ✅ GPS 유령 - 현재 위치 바로 그 자리에 배치
-    const baseLocation = userLocation || {
-      latitude: 37.5665, // 서울시청 (GPS 없을 때 기본값)
-      longitude: 126.978,
+    const baseLocation = {
+      latitude: 35.20517490, // 서울시청 (GPS 없을 때 기본값)
+      longitude: 126.81175610,
     };
 
     newGhosts.push({
