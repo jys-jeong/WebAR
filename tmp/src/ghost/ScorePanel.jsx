@@ -1,19 +1,103 @@
-import React from 'react';
+// components/ScorePanel.jsx
+import React from "react";
 
-export default function ScorePanel({ left, score, total }) {
+export default function ScorePanel({ left, score, total, ghosts = [] }) {
+  // 유령 유형별 개수 계산
+  const gpsGhosts = ghosts.filter(g => g.type === "gps-fixed");
+  const orientationGhosts = ghosts.filter(g => g.type === "orientation-fixed");
+  const visibleGhosts = ghosts.filter(g => g.type === "always-visible");
+
   return (
-    <div style={{
-      position:'absolute', top:20, left:20, right:80,
-      background:'rgba(0,0,0,.9)', color:'#fff',
-      padding:15, borderRadius:12, border:'2px solid #FF6B6B',
-      zIndex:50, fontSize:14
-    }}>
-      <h3 style={{margin:0, color:'#FF6B6B'}}>
-        👻 유령 사냥 AR ({left}마리 남음)
-      </h3>
-      <div style={{display:'flex', justifyContent:'space-between', fontSize:12}}>
-        <span>🎯 스코어: <strong>{score}</strong>점</span>
-        <span>👻 총 처치: <strong>{total}</strong>마리</span>
+    <div
+      style={{
+        position: "absolute",
+        top: 20,
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: "rgba(0,0,0,0.8)",
+        color: "white",
+        padding: "15px 20px",
+        borderRadius: "15px",
+        textAlign: "center",
+        zIndex: 50,
+        minWidth: "280px",
+        border: "2px solid #4CAF50",
+      }}
+    >
+      <div style={{ fontSize: "16px", fontWeight: "bold", marginBottom: "10px", color: "#4CAF50" }}>
+        👻 게임 현황
+      </div>
+      
+      {/* 전체 점수 */}
+      <div style={{ fontSize: "14px", marginBottom: "12px" }}>
+        🎯 점수: <span style={{ color: "#FFD700", fontWeight: "bold" }}>{score}</span> | 
+        총 잡은 수: <span style={{ color: "#FFD700", fontWeight: "bold" }}>{total}</span>
+      </div>
+
+      {/* 유령 유형별 현황 */}
+      <div style={{ 
+        display: "flex", 
+        justifyContent: "space-between", 
+        gap: "10px",
+        fontSize: "12px"
+      }}>
+        {/* GPS 유령 */}
+        <div style={{
+          flex: 1,
+          background: "rgba(33, 150, 243, 0.2)",
+          border: "1px solid #2196F3",
+          borderRadius: "8px",
+          padding: "8px 4px",
+          textAlign: "center"
+        }}>
+          <div style={{ fontSize: "16px", marginBottom: "4px" }}>📍</div>
+          <div style={{ color: "#2196F3", fontWeight: "bold" }}>GPS</div>
+          <div style={{ color: gpsGhosts.length > 0 ? "#4CAF50" : "#888" }}>
+            {gpsGhosts.length}마리
+          </div>
+        </div>
+
+        {/* 회전감지 유령 */}
+        <div style={{
+          flex: 1,
+          background: "rgba(255, 107, 107, 0.2)",
+          border: "1px solid #FF6B6B",
+          borderRadius: "8px",
+          padding: "8px 4px",
+          textAlign: "center"
+        }}>
+          <div style={{ fontSize: "16px", marginBottom: "4px" }}>🎯</div>
+          <div style={{ color: "#FF6B6B", fontWeight: "bold" }}>회전</div>
+          <div style={{ color: orientationGhosts.length > 0 ? "#4CAF50" : "#888" }}>
+            {orientationGhosts.length}마리
+          </div>
+        </div>
+
+        {/* 일반 유령 */}
+        <div style={{
+          flex: 1,
+          background: "rgba(76, 175, 80, 0.2)",
+          border: "1px solid #4CAF50",
+          borderRadius: "8px",
+          padding: "8px 4px",
+          textAlign: "center"
+        }}>
+          <div style={{ fontSize: "16px", marginBottom: "4px" }}>👻</div>
+          <div style={{ color: "#4CAF50", fontWeight: "bold" }}>일반</div>
+          <div style={{ color: visibleGhosts.length > 0 ? "#4CAF50" : "#888" }}>
+            {visibleGhosts.length}마리
+          </div>
+        </div>
+      </div>
+
+      {/* 총 남은 유령 */}
+      <div style={{ 
+        marginTop: "10px", 
+        fontSize: "14px", 
+        fontWeight: "bold",
+        color: left > 0 ? "#FFD700" : "#4CAF50" 
+      }}>
+        {left > 0 ? `남은 유령: ${left}마리` : "🎉 모든 유령 처치 완료!"}
       </div>
     </div>
   );

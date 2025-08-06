@@ -18,7 +18,8 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   const [lastLocation, setLastLocation] = useState(null);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebug, setShowDebug] = useState(true);
-  const [showGhostInfo, setShowGhostInfo] = useState(true); // ✅ 유령 정보 표시 여부
+  const [showGhostInfo, setShowGhostInfo] = useState(true);
+  const [showCoordinates, setShowCoordinates] = useState(true); // ✅ 좌표 표시 여부
 
   const {
     ghosts,
@@ -51,11 +52,32 @@ export default function SimpleAROverlay({ isActive, onClose }) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
+  // ✅ 좌표 복사 함수
+  const copyCoordinates = () => {
+    if (location) {
+      const coordText = `${location.latitude}, ${location.longitude}`;
+      navigator.clipboard.writeText(coordText).then(() => {
+        addDebugLog("좌표 복사됨: " + coordText);
+      }).catch(() => {
+        addDebugLog("좌표 복사 실패");
+      });
+    }
+  };
+
+  // ✅ Google Maps 링크 열기
+  const openInMaps = () => {
+    if (location) {
+      const mapsUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
+      window.open(mapsUrl, '_blank');
+      addDebugLog("Google Maps에서 열기");
+    }
+  };
+
   // 3가지 타입 유령 처리 함수
   const getProcessedGhost = (ghost, index) => {
     if (!supported) return ghost;
 
-    // 🎯 orientation-fixed 로직
+    // orientation-fixed 로직
     if (ghost.type === "orientation-fixed") {
       const alphaDiff = Math.min(
         Math.abs(orientation.alpha - ghost.targetAlpha),
@@ -76,7 +98,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       };
     }
 
-    // 📍 GPS 유령: 반경 내에 들어오면 이미지 표시
+    // GPS 유령: 반경 내에 들어오면 이미지 표시
     if (ghost.type === "gps-fixed" && location) {
       const distance = calculateDistance(
         location.latitude,
@@ -116,7 +138,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       };
     }
 
-    // 👻 always-visible 로직
+    // always-visible 로직
     return {
       ...ghost,
       currentX: ghost.pos?.x || 50,
@@ -357,9 +379,181 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         );
       })}
 
-      <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
+      <ScorePanel left={ghosts.length} score={score} total={totalCaught} ghosts={ghosts} />
 
-      {/* ✅ 유령 정보 상세 패널 */}
+      {/* ✅ 현재 좌표 표시 패널 */}
+      {showCoordinates && (
+        <div style={{
+          position: "absolute", bottom: 10, left: 10, right: 10,
+          background: "rgba(0,0,0,0.9)", color: "white",
+          borderRadius: "15px", zIndex: 95,
+          border: "3px solid #FFD700",
+          boxShadow: "0 0 20px rgba(255, 215, 0, 0.3)"
+        }}>
+          {/* 헤더 */}
+          <div 
+            style={{
+              padding: "15px", 
+              borderBottom: "2px solid #FFD700",
+              display: "flex", 
+              justifyContent: "space-between", 
+              alignItems: "center"
+            }}
+            onClick={() => setShowCoordinates(!showCoordinates)}
+          >
+            <div style={{ fontSize: "16px", fontWeight: "bold", color: "#FFD700" }}>
+              📍 현재 위치 정보
+            </div>
+            <div style={{ fontSize: "12px", color: "#ccc" }}>
+              탭해서 접기
+            </div>
+          </div>
+
+          {/* 좌표 상세 정보 */}
+          <div style={{ padding: "15px" }}>
+            {location ? (
+              <div>
+                {/* 메인 좌표 표시 */}
+                <div style={{
+                  background: "rgba(255, 215, 0, 0.1)",
+                  padding: "15px",
+                  borderRadius: "10px",
+                  marginBottom: "15px",
+                  border: "1px solid #FFD700"
+                }}>
+                  <div style={{ fontSize: "14px", fontWeight: "bold", marginBottom: "10px", color: "#FFD700" }}>
+                    🌍 GPS 좌표
+                  </div>
+                  <div style={{ fontSize: "16px", fontFamily: "monospace", marginBottom: "8px" }}>
+                    <span style={{ color: "#4CAF50" }}>위도:</span> {location.latitude.toFixed(8)}
+                  </div>
+                  <div style={{ fontSize: "16px", fontFamily: "monospace", marginBottom: "10px" }}>
+                    <span style={{ color: "#2196F3" }}>경도:</span> {location.longitude.toFixed(8)}
+                  </div>
+                  
+                  {/* 액션 버튼들 */}
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <button
+                      onClick={copyCoordinates}
+                      style={{
+                        flex: 1,
+                        background: "#4CAF50",
+                        color: "white",
+                        border: "none",
+                        padding: "10px",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: "bold"
+                      }}
+                    >
+                      📋 좌표 복사
+                    </button>
+                    <button
+                      onClick={openInMaps}
+                      style={{
+                        flex: 1,
+                        background: "#2196F3",
+                        color: "white",
+                        border: "none",
+                        padding: "10px",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: "bold"
+                      }}
+                    >
+                      🗺️ 지도에서 보기
+                    </button>
+                  </div>
+                </div>
+
+                {/* 추가 정보 */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", fontSize: "12px" }}>
+                  <div style={{
+                    background: "rgba(76, 175, 80, 0.1)",
+                    padding: "10px",
+                    borderRadius: "8px",
+                    border: "1px solid #4CAF50"
+                  }}>
+                    <div style={{ color: "#4CAF50", fontWeight: "bold", marginBottom: "5px" }}>
+                      🎯 정확도
+                    </div>
+                    <div style={{ fontSize: "14px" }}>
+                      ±{location.accuracy?.toFixed(0)}m
+                    </div>
+                  </div>
+                  
+                  <div style={{
+                    background: "rgba(255, 152, 0, 0.1)",
+                    padding: "10px",
+                    borderRadius: "8px",
+                    border: "1px solid #FF9800"
+                  }}>
+                    <div style={{ color: "#FF9800", fontWeight: "bold", marginBottom: "5px" }}>
+                      ⏰ 업데이트
+                    </div>
+                    <div style={{ fontSize: "14px" }}>
+                      {new Date().toLocaleTimeString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* GPS 유령과의 거리 정보 */}
+                {ghosts.filter(g => g.type === "gps-fixed").length > 0 && (
+                  <div style={{
+                    marginTop: "15px",
+                    background: "rgba(33, 150, 243, 0.1)",
+                    padding: "10px",
+                    borderRadius: "8px",
+                    border: "1px solid #2196F3"
+                  }}>
+                    <div style={{ color: "#2196F3", fontWeight: "bold", marginBottom: "8px" }}>
+                      👻 GPS 유령과의 거리
+                    </div>
+                    {ghosts.filter(g => g.type === "gps-fixed").map((gh, i) => {
+                      const distance = calculateDistance(
+                        location.latitude, location.longitude,
+                        gh.gpsLat, gh.gpsLon
+                      );
+                      return (
+                        <div key={i} style={{ margin: "4px 0", fontSize: "12px" }}>
+                          📍 유령 {i + 1}: <span style={{ color: distance <= 6 ? "#4CAF50" : "#FF9800" }}>
+                            {distance.toFixed(1)}m
+                          </span>
+                          {distance <= 6 && <span style={{ color: "#4CAF50" }}> ✅ 보임</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ textAlign: "center", padding: "20px", color: "#FF9800" }}>
+                <div style={{ fontSize: "16px", marginBottom: "10px" }}>📍 GPS 위치 확인 중...</div>
+                <div style={{ fontSize: "12px", color: "#ccc" }}>
+                  위치 권한을 허용해주세요
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 좌표 패널 토글 버튼 (접었을 때) */}
+      {!showCoordinates && (
+        <button
+          onClick={() => setShowCoordinates(true)}
+          style={{
+            position: "absolute", bottom: 20, left: 20,
+            background: "#FFD700", color: "black",
+            border: "none", padding: "12px", borderRadius: "50%",
+            fontSize: "16px", zIndex: 95, fontWeight: "bold"
+          }}
+        >
+          📍
+        </button>
+      )}
+
+      {/* 유령 정보 상세 패널 (기존) */}
       {showGhostInfo && (
         <div style={{
           position: "absolute", top: 10, right: 10, 
@@ -563,7 +757,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
           }}
           style={{
             position: "absolute",
-            bottom: 50,
+            bottom: 200,
             left: 20,
             background: "#4CAF50",
             color: "white",

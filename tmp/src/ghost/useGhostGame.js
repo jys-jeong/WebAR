@@ -3,8 +3,14 @@ import { useState, useCallback, useEffect } from "react";
 import { createRandomGhost } from "./ghostUtils";
 
 const movementPatterns = [
-  "random-jump", "smooth-slide", "circular", "zigzag",
-  "bounce", "pause", "spiral", "shake",
+  "random-jump",
+  "smooth-slide",
+  "circular",
+  "zigzag",
+  "bounce",
+  "pause",
+  "spiral",
+  "shake",
 ];
 
 export default function useGhostGame() {
@@ -13,51 +19,58 @@ export default function useGhostGame() {
   const [totalCaught, setTotalCaught] = useState(0);
 
   // ✅ 각 유형별로 정확히 1마리씩만 생성
+  // hooks/useGhostGame.js의 resetGame 함수 수정
   const resetGame = useCallback((userLocation) => {
     let newGhosts = [];
 
-    // 🎯 Type A: orientation-fixed 유령 1마리
+    // 🎯 회전감지 유령 1마리
     newGhosts.push({
       ...createRandomGhost(),
       type: "orientation-fixed",
-      targetAlpha: Math.random() * 360,      // 0~360도
-      targetBeta: (Math.random() - 0.5) * 60, // -30~30도
-      tolerance: 30,                          // ±30도 허용
-      title: "회전감지 유령"
+      targetAlpha: Math.random() * 360,
+      targetBeta: (Math.random() - 0.5) * 60,
+      tolerance: 30,
+      title: "회전감지 유령",
     });
 
-    // 📍 Type B: GPS 기반 유령 1마리 (위치가 있을 때만)
-    if (userLocation) {
-      const distance = Math.random() * 4 + 1; // 1~5m
-      const angle = Math.random() * 360;      // 0~360도
-      
-      const latOffset = (distance * Math.cos(angle * Math.PI / 180)) / 111000;
-      const lonOffset = (distance * Math.sin(angle * Math.PI / 180)) / (111000 * Math.cos(userLocation.latitude * Math.PI / 180));
-      
-      newGhosts.push({
-        ...createRandomGhost(),
-        type: "gps-fixed",
-        gpsLat: userLocation.latitude + latOffset,
-        gpsLon: userLocation.longitude + lonOffset,
-        maxVisibleDistance: 6,
-        title: "GPS 유령",
-        initialDistance: distance,
-        initialAngle: angle
-      });
-    }
+    // ✅ GPS 유령 - 위치가 없어도 테스트용으로 생성
+    const testLocation = userLocation || {
+      latitude: 37.5665, // 서울시청 좌표
+      longitude: 126.978,
+    };
 
-    // 👻 Type C: always-visible 유령 1마리
+    const distance = 3; // 3m 거리로 고정
+    const angle = 45; // 45도 방향으로 고정
+
+    const latOffset = (distance * Math.cos((angle * Math.PI) / 180)) / 111000;
+    const lonOffset =
+      (distance * Math.sin((angle * Math.PI) / 180)) /
+      (111000 * Math.cos((testLocation.latitude * Math.PI) / 180));
+
+    newGhosts.push({
+      ...createRandomGhost(),
+      type: "gps-fixed",
+      gpsLat: testLocation.latitude + latOffset,
+      gpsLon: testLocation.longitude + lonOffset,
+      maxVisibleDistance: 50, // 50m로 넉넉하게 설정
+      title: "GPS 유령",
+      initialDistance: distance,
+      initialAngle: angle,
+    });
+
+    // 👻 일반 유령 1마리
     newGhosts.push({
       ...createRandomGhost(),
       type: "always-visible",
-      title: "일반 유령"
+      title: "일반 유령",
     });
 
     setGhosts(newGhosts);
     setScore(0);
     setTotalCaught(0);
-    
+
     console.log(`🎮 게임 시작: 총 ${newGhosts.length}마리 유령 생성`);
+    console.log("GPS 유령 배치:", { distance, angle, maxVisibleDistance: 50 });
   }, []);
 
   const catchGhost = (index) => {
@@ -65,8 +78,8 @@ export default function useGhostGame() {
       prev.map((gh, i) => (i === index ? { ...gh, anim: true } : gh))
     );
 
-    setScore(prev => prev + 10);
-    setTotalCaught(prev => prev + 1);
+    setScore((prev) => prev + 10);
+    setTotalCaught((prev) => prev + 1);
 
     setTimeout(() => {
       setGhosts((prev) => {
@@ -79,10 +92,17 @@ export default function useGhostGame() {
     }, 500);
   };
 
-  useEffect(() => { resetGame(); }, [resetGame]);
+  useEffect(() => {
+    resetGame();
+  }, [resetGame]);
 
   return {
-    ghosts, setGhosts, score, totalCaught,
-    resetGame, catchGhost, movementPatterns,
+    ghosts,
+    setGhosts,
+    score,
+    totalCaught,
+    resetGame,
+    catchGhost,
+    movementPatterns,
   };
 }
