@@ -44,6 +44,8 @@ export default function useGhostGame() {
       gpsLat: baseLocation.latitude, // ✅ 정확히 같은 위도
       gpsLon: baseLocation.longitude, // ✅ 정확히 같은 경도
       maxVisibleDistance: 100, // ✅ 100m 반경 (넉넉하게)
+      speed: 0,
+      isFixed: true,
       title: "내 위치 GPS 유령",
     });
 

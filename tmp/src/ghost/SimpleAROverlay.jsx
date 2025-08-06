@@ -108,33 +108,26 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         ghost.gpsLon
       );
 
-      const maxDistance = ghost.maxVisibleDistance || 100; // ✅ 기본값 100m
+      const maxDistance = ghost.maxVisibleDistance || 100;
 
-      console.log(
-        `👻 GPS 유령: 거리 ${distance.toFixed(1)}m, 최대 ${maxDistance}m`
-      );
-
-      // ✅ 거리 제한 완화 (100m 이내면 보임)
       if (distance > maxDistance) {
         return {
           ...ghost,
           pos: { x: -100, y: -100 },
           currentDistance: distance,
-          bearing: 0,
         };
       }
 
-      // ✅ 현재 위치면 화면 중앙에 크게 표시
-      const sizeScale =
-        distance < 1 ? 2.0 : Math.max(0.5, 10 / Math.max(distance, 1));
-
+      // ✅ GPS 유령은 항상 고정된 화면 위치에 표시
       return {
         ...ghost,
-        pos: { x: 50, y: 50 }, // ✅ 화면 중앙에 고정
-        size: ghost.size * sizeScale,
+        pos: { x: 50, y: 50 }, // ✅ 화면 중앙 고정
+        size: ghost.size * 1.5,
         distance: distance.toFixed(1),
         opacity: 0.9,
         currentDistance: distance,
+        // ✅ 회전도 고정
+        rotation: ghost.rotation || 0,
       };
     }
 
