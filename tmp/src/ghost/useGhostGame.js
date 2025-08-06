@@ -22,7 +22,13 @@ export default function useGhostGame() {
   const resetGame = useCallback((userLocation) => {
     let newGhosts = [];
 
-    // ✅ 1. orientation-fixed 유령 - 1마리
+    // 기본 위치 설정
+    const baseLocation = userLocation || {
+      latitude: 35.2051749,
+      longitude: 126.8117561,
+    };
+
+    // 🎯 orientation-fixed 유령 - 1마리
     newGhosts.push({
       ...createRandomGhost(),
       type: "orientation-fixed",
@@ -32,49 +38,50 @@ export default function useGhostGame() {
       title: "🎯 회전감지 유령",
     });
 
-    // ✅ 2. always-visible 유령 - 1마리
+    // 🌍 gps-fixed 유령 - 1마리
+    newGhosts.push({
+      ...createRandomGhost(),
+      type: "gps-fixed",
+      gpsLat: baseLocation.latitude,
+      gpsLon: baseLocation.longitude,
+      maxVisibleDistance: 100,
+      speed: 0,
+      isFixed: true,
+      title: "🌍 GPS 유령",
+    });
+
+    // ✅ 🧭 location-direction 유령 - 1마리 (새로 추가)
+    newGhosts.push({
+      ...createRandomGhost(),
+      type: "location-direction",
+      // GPS 조건
+      targetLat: baseLocation.latitude + 0.000045, // 북쪽 5m
+      targetLon: baseLocation.longitude + 0.000045, // 동쪽 5m
+      locationTolerance: 10, // 10m 이내
+      // 방향 조건
+      targetCompass: 45, // 북동쪽 45도
+      compassTolerance: 15, // ±15도 허용
+      speed: 0,
+      isFixed: true,
+      title: "🧭 위치+방향 유령",
+    });
+
+    // 👻 always-visible 유령 - 1마리
     newGhosts.push({
       ...createRandomGhost(),
       type: "always-visible",
       title: "👻 일반 유령",
     });
 
-    // ✅ 3. location-direction 유령 - 1마리 (GPS 위치가 있을 때만)
-    if (userLocation) {
-      newGhosts.push({
-        ...createRandomGhost(),
-        type: "location-direction",
-        targetLat: 35.20517490 + 0.000045, // 북쪽 5m
-        targetLon: 126.81175610 + 0.000045, // 동쪽 5m
-        locationTolerance: 10, // 10m 이내
-        targetCompass: 45, // 북동쪽 45도
-        compassTolerance: 15, // ±15도 허용
-        title: "🧭 위치+방향 유령",
-      });
-    }
-
-    // ✅ 4. gps-fixed 유령 - 1마리 (GPS 위치가 있을 때만)
-    if (userLocation) {
-      newGhosts.push({
-        ...createRandomGhost(),
-        type: "gps-fixed",
-        gpsLat: 35.20517490.latitude, // 현재 위치와 동일
-        gpsLon: 126.81175610.longitude, // 현재 위치와 동일
-        maxVisibleDistance: 100, // 100m 반경
-        title: "🌍 GPS 유령",
-      });
-    }
-
     setGhosts(newGhosts);
     setScore(0);
     setTotalCaught(0);
 
-    // ✅ 생성된 유령 수 확인 로그
     console.log(`🎮 게임 시작: 총 ${newGhosts.length}마리 유령 생성`);
     console.log(`- 회전감지: 1마리`);
+    console.log(`- GPS: 1마리`);
+    console.log(`- 위치+방향: 1마리`);
     console.log(`- 일반: 1마리`);
-    console.log(`- 위치+방향: ${userLocation ? 1 : 0}마리`);
-    console.log(`- GPS: ${userLocation ? 1 : 0}마리`);
   }, []);
 
   const catchGhost = (index) => {

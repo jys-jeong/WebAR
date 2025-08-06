@@ -14,7 +14,8 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
   const { orientation, supported } = useDeviceOrientation();
   const { location } = useGeoLocation();
-  const { compass } = useCompass(); // ✅ 나침반 추가
+  const { compass } = useCompass();
+
   const [lastLocation, setLastLocation] = useState(null);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebug, setShowDebug] = useState(true);
@@ -77,7 +78,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   const getProcessedGhost = (ghost, index) => {
     if (!supported) return ghost;
 
-    // 기존 orientation-fixed 로직
+    // 기존 orientation-fixed 로직 (그대로 유지)
     if (ghost.type === "orientation-fixed") {
       const alphaDiff = Math.min(
         Math.abs(orientation.alpha - ghost.targetAlpha),
@@ -99,7 +100,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       };
     }
 
-    // ✅ 새로운 타입: location-direction 처리
+    // ✅ 새로운 타입: location-direction 처리 (위치 + 방향 조건)
     if (ghost.type === "location-direction" && location && compass) {
       // GPS 거리 조건 확인
       const distance = calculateDistance(
@@ -126,7 +127,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         }° (차이: ${compassDiff.toFixed(0)}°)`
       );
 
-      // 두 조건 모두 만족해야 보임
+      // ✅ 두 조건 모두 만족해야 보임
       if (!locationInRange || !directionInRange) {
         return {
           ...ghost,
@@ -861,74 +862,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
                       </div>
                     </div>
                   )}
-                  {/* ✅ 새로 추가: location-direction 유령 정보 */}
-                  {gh.type === "location-direction" && (
-                    <div>
-                      <div>
-                        📍 목표 GPS: {gh.targetLat.toFixed(6)},{" "}
-                        {gh.targetLon.toFixed(6)}
-                      </div>
-                      <div>
-                        📏 현재 거리:{" "}
-                        {processedGhost.currentDistance?.toFixed(1)}m /{" "}
-                        {gh.locationTolerance}m
-                      </div>
-                      <div
-                        style={{
-                          color: processedGhost.locationInRange
-                            ? "#4CAF50"
-                            : "#FF9800",
-                        }}
-                      >
-                        📍 위치 조건:{" "}
-                        {processedGhost.locationInRange
-                          ? "✅ 만족"
-                          : "❌ 불만족"}
-                      </div>
 
-                      <div>
-                        🧭 목표 방향: {gh.targetCompass}° (±
-                        {gh.compassTolerance}°)
-                      </div>
-                      <div>
-                        🧭 현재 방향:{" "}
-                        {processedGhost.currentCompass?.toFixed(0)}°
-                      </div>
-                      <div>
-                        📐 방향 차이: {processedGhost.compassDiff?.toFixed(0)}°
-                      </div>
-                      <div
-                        style={{
-                          color: processedGhost.directionInRange
-                            ? "#4CAF50"
-                            : "#FF9800",
-                        }}
-                      >
-                        🧭 방향 조건:{" "}
-                        {processedGhost.directionInRange
-                          ? "✅ 만족"
-                          : "❌ 불만족"}
-                      </div>
-
-                      <div
-                        style={{
-                          color:
-                            processedGhost.locationInRange &&
-                            processedGhost.directionInRange
-                              ? "#4CAF50"
-                              : "#FF9800",
-                          fontWeight: "bold",
-                          marginTop: "5px",
-                        }}
-                      >
-                        👁️ 상태:{" "}
-                        {processedGhost.locationInRange &&
-                        processedGhost.directionInRange
-                          ? "화면에 보임!"
-                          : "조건 불만족"}
-                      </div>
-                    </div>
-                  )}
                   {/* 일반 유령 정보 */}
                   {gh.type === "always-visible" && (
                     <div>

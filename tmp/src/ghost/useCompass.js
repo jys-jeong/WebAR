@@ -1,4 +1,4 @@
-// hooks/useCompass.js
+// hooks/useCompass.js (기존 파일 수정)
 import { useState, useEffect } from 'react';
 
 export default function useCompass() {
