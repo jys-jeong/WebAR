@@ -40,13 +40,15 @@ export default function useGhostGame() {
 
     newGhosts.push({
       ...createRandomGhost(),
-      type: "gps-fixed",
-      gpsLat: baseLocation.latitude, // ✅ 정확히 같은 위도
-      gpsLon: baseLocation.longitude, // ✅ 정확히 같은 경도
-      maxVisibleDistance: 100, // ✅ 100m 반경 (넉넉하게)
-      speed: 0,
-      isFixed: true,
-      title: "내 위치 GPS 유령",
+      type: "location-direction",
+      // GPS 조건
+      targetLat: baseLocation.latitude + 0.000045,  // 북쪽 5m
+      targetLon: baseLocation.longitude + 0.000045, // 동쪽 5m
+      locationTolerance: 10, // 10m 이내
+      // 방향 조건  
+      targetCompass: 45,     // 북동쪽 45도
+      compassTolerance: 15,  // ±15도 허용
+      title: "위치+방향 유령"
     });
 
     // 기존 일반 유령
