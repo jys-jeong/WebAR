@@ -16,6 +16,8 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   const { location } = useGeoLocation();
 
   const [lastLocation, setLastLocation] = useState(null);
+  const [debugLogs, setDebugLogs] = useState([]); // ✅ 디버그 로그 저장
+  const [showDebug, setShowDebug] = useState(true); // ✅ 디버그 패널 표시 여부
 
   const {
     ghosts,
@@ -26,6 +28,15 @@ export default function SimpleAROverlay({ isActive, onClose }) {
     catchGhost,
     movementPatterns,
   } = useGhostGame();
+
+  // ✅ 디버그 로그 추가 함수
+  const addDebugLog = (message) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [
+      ...prev.slice(-20), // 최근 20개만 유지
+      { time: timestamp, message }
+    ]);
+  };
 
   // GPS 거리 계산 함수
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -58,7 +69,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       return ghost;
     }
 
-    // ✅ GPS 유령: 반경 내에 들어오면 이미지 표시
+    // GPS 유령: 반경 내에 들어오면 이미지 표시
     if (ghost.type === "gps-fixed" && location) {
       const distance = calculateDistance(
         location.latitude,
@@ -67,17 +78,20 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         ghost.gpsLon
       );
 
-      const maxDistance = ghost.maxVisibleDistance || 6; // 6m 반경
+      const maxDistance = ghost.maxVisibleDistance || 6;
       
-      console.log(`👻 GPS 유령 ${index}: 거리 ${distance.toFixed(1)}m, 최대 ${maxDistance}m`);
+      // ✅ UI 디버그 로그 추가
+      addDebugLog(`GPS 유령${index}: ${distance.toFixed(1)}m (최대${maxDistance}m)`);
 
       // 반경 밖이면 숨김
       if (distance > maxDistance) {
         return { ...ghost, pos: { x: -100, y: -100 } };
       }
 
-      // 반경 안이면 이미지 표시 + 거리에 따른 크기 조정
+      // 반경 안이면 이미지 표시
       const sizeScale = Math.max(0.5, 3 / Math.max(distance, 1));
+      
+      addDebugLog(`GPS 유령${index} 화면에 표시! 크기: ${sizeScale.toFixed(2)}`);
       
       return {
         ...ghost,
@@ -95,12 +109,33 @@ export default function SimpleAROverlay({ isActive, onClose }) {
     if (isActive) {
       // 처음 한 번만 게임 시작
       if (location && ghosts.length === 0) {
+        addDebugLog(`GPS 위치 확보: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`);
         resetGame(location);
+        addDebugLog("GPS 기반 게임 시작!");
       } else if (!location && ghosts.length === 0) {
+        addDebugLog("GPS 없이 기본 게임 시작");
         resetGame();
       }
     }
   }, [isActive, location]);
+
+  // ✅ GPS 위치 변경 로그
+  useEffect(() => {
+    if (location) {
+      addDebugLog(`GPS 업데이트: ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)} (정확도: ${location.accuracy}m)`);
+    }
+  }, [location]);
+
+  // ✅ 유령 생성 로그
+  useEffect(() => {
+    if (ghosts.length > 0) {
+      const gpsGhosts = ghosts.filter(g => g.type === "gps-fixed");
+      const orientationGhosts = ghosts.filter(g => g.type === "orientation-fixed");
+      const visibleGhosts = ghosts.filter(g => g.type === "always-visible");
+      
+      addDebugLog(`유령 생성 완료: GPS ${gpsGhosts.length}마리, 회전 ${orientationGhosts.length}마리, 일반 ${visibleGhosts.length}마리`);
+    }
+  }, [ghosts.length]);
 
   // 카메라 설정
   useEffect(() => {
@@ -115,8 +150,12 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       })
       .then((s) => {
         if (videoRef.current) videoRef.current.srcObject = s;
+        addDebugLog("카메라 시작 성공");
       })
-      .catch(() => alert("카메라 권한이 필요합니다"));
+      .catch(() => {
+        addDebugLog("카메라 권한 오류");
+        alert("카메라 권한이 필요합니다");
+      });
     return () =>
       videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
   }, [isActive]);
@@ -124,8 +163,6 @@ export default function SimpleAROverlay({ isActive, onClose }) {
   // 실시간 움직임 로직 (always-visible만)
   useEffect(() => {
     if (!isActive || ghosts.length === 0) return;
-
-    console.log("Starting movement for", ghosts.length, "ghosts");
 
     const timers = ghosts
       .map((gh, index) => {
@@ -220,7 +257,6 @@ export default function SimpleAROverlay({ isActive, onClose }) {
       .filter(Boolean);
 
     return () => {
-      console.log("Clearing movement timers");
       timers.forEach(clearInterval);
     };
   }, [isActive, ghosts.length, movementPatterns, setGhosts]);
@@ -247,7 +283,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
 
-      {/* ✅ 모든 타입의 유령 렌더링 (GPS 유령 포함) */}
+      {/* 모든 타입의 유령 렌더링 */}
       {ghosts.map((gh, i) => {
         const processedGhost = getProcessedGhost(gh, i);
         
@@ -263,7 +299,10 @@ export default function SimpleAROverlay({ isActive, onClose }) {
               <Ghost
                 gh={processedGhost}
                 idx={i}
-                onClick={() => catchGhost(i)}
+                onClick={() => {
+                  addDebugLog(`GPS 유령 ${i} 클릭됨!`);
+                  catchGhost(i);
+                }}
               />
               {/* 거리 표시 */}
               <div style={{
@@ -300,7 +339,95 @@ export default function SimpleAROverlay({ isActive, onClose }) {
 
       <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
 
-      {/* ✅ GPS 유령 상태 안내 */}
+      {/* ✅ 모바일 디버그 패널 - 접을 수 있음 */}
+      <div style={{
+        position: "absolute", top: 10, left: 10, right: 10,
+        background: "rgba(0,0,0,0.9)", color: "white",
+        borderRadius: "10px", zIndex: 100,
+        border: "2px solid #4CAF50"
+      }}>
+        {/* 헤더 */}
+        <div 
+          style={{
+            padding: "12px", 
+            borderBottom: showDebug ? "1px solid #555" : "none",
+            display: "flex", 
+            justifyContent: "space-between", 
+            alignItems: "center"
+          }}
+          onClick={() => setShowDebug(!showDebug)}
+        >
+          <div style={{ fontSize: "14px", fontWeight: "bold", color: "#4CAF50" }}>
+            🔍 디버그 정보 {showDebug ? "▼" : "▶"}
+          </div>
+          <div style={{ fontSize: "12px", color: "#ccc" }}>
+            탭해서 {showDebug ? "접기" : "펼치기"}
+          </div>
+        </div>
+
+        {/* 상세 정보 */}
+        {showDebug && (
+          <div style={{ padding: "12px", fontSize: "12px" }}>
+            {/* 현재 상태 */}
+            <div style={{ marginBottom: "10px" }}>
+              <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: "5px" }}>
+                📊 현재 상태
+              </div>
+              <div>🧭 방향: α={Math.round(orientation.alpha)}° β={Math.round(orientation.beta)}°</div>
+              <div>📍 GPS: {location ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` : "위치 확인 중..."}</div>
+              <div>🎯 정확도: {location?.accuracy?.toFixed(0)}m</div>
+              <div>👻 전체 유령: {ghosts.length}마리</div>
+            </div>
+
+            {/* 유령별 상태 */}
+            <div style={{ marginBottom: "10px" }}>
+              <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: "5px" }}>
+                👻 유령 상태
+              </div>
+              {ghosts.map((gh, i) => (
+                <div key={i} style={{ 
+                  margin: "3px 0", 
+                  padding: "4px",
+                  backgroundColor: gh.type === "gps-fixed" ? "rgba(33, 150, 243, 0.2)" : "rgba(76, 175, 80, 0.2)",
+                  borderRadius: "4px"
+                }}>
+                  {i}: {gh.type} 
+                  {gh.type === "gps-fixed" && location && (
+                    <span style={{ color: "#4CAF50" }}>
+                      - {calculateDistance(location.latitude, location.longitude, gh.gpsLat, gh.gpsLon).toFixed(1)}m
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* 최근 로그 */}
+            <div>
+              <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: "5px" }}>
+                📝 최근 로그 (최근 5개)
+              </div>
+              <div style={{
+                maxHeight: "120px", 
+                overflowY: "auto",
+                backgroundColor: "rgba(255,255,255,0.1)",
+                borderRadius: "4px",
+                padding: "5px"
+              }}>
+                {debugLogs.slice(-5).map((log, i) => (
+                  <div key={i} style={{ margin: "2px 0", fontSize: "10px" }}>
+                    <span style={{ color: "#888" }}>[{log.time}]</span> {log.message}
+                  </div>
+                ))}
+                {debugLogs.length === 0 && (
+                  <div style={{ color: "#888", fontSize: "10px" }}>로그 없음</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* GPS 유령 상태 안내 */}
       {location && ghosts.filter((g) => g.type === "gps-fixed").length > 0 && (
         <div style={{
           position: "absolute", bottom: 120, left: "50%",
@@ -379,53 +506,6 @@ export default function SimpleAROverlay({ isActive, onClose }) {
         </div>
       )}
 
-      {/* 디버그 정보 패널 */}
-      {supported && (
-        <div style={{
-          position: "absolute", top: 100, left: 20,
-          background: "rgba(0,0,0,0.8)", color: "white",
-          padding: "12px", borderRadius: "8px", fontSize: "11px",
-          zIndex: 50, minWidth: "200px",
-        }}>
-          <div>🧭 현재: α={Math.round(orientation.alpha)}° β={Math.round(orientation.beta)}°</div>
-
-          {/* GPS 실시간 정보 */}
-          {location && (
-            <>
-              <hr style={{ margin: "6px 0", border: "1px solid #555" }} />
-              <div style={{ color: "#4CAF50", fontSize: "10px" }}>
-                📍 위치: {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}<br />
-                🎯 정확도: {location.accuracy?.toFixed(0)}m
-                <div style={{ color: "#FFD700", marginTop: "4px" }}>
-                  🔄 실시간 갱신 중...
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* orientation-fixed 정보 */}
-          {ghosts.find((g) => g.type === "orientation-fixed") && (
-            <>
-              <hr style={{ margin: "6px 0", border: "1px solid #555" }} />
-              <div style={{ color: "#ff6b6b" }}>
-                🎯 목표: α={Math.round(ghosts.find((g) => g.type === "orientation-fixed").targetAlpha)}° 
-                β={Math.round(ghosts.find((g) => g.type === "orientation-fixed").targetBeta)}°
-              </div>
-            </>
-          )}
-
-          {/* GPS 유령 정보 */}
-          {ghosts.find((g) => g.type === "gps-fixed") && (
-            <>
-              <hr style={{ margin: "6px 0", border: "1px solid #555" }} />
-              <div style={{ color: "#FFD700" }}>
-                🌍 GPS 유령: {ghosts.filter((g) => g.type === "gps-fixed").length}마리
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
       {/* iOS 권한 요청 버튼 */}
       {!supported && (
         <button
@@ -439,7 +519,7 @@ export default function SimpleAROverlay({ isActive, onClose }) {
           }}
           style={{
             position: "absolute",
-            top: 120,
+            bottom: 50,
             left: 20,
             background: "#4CAF50",
             color: "white",
