@@ -22,55 +22,41 @@ export default function useGhostGame() {
   const resetGame = useCallback((userLocation) => {
     let newGhosts = [];
 
-    if (userLocation) {
-      const numGpsGhosts = 3; // 3마리 고정
+    // 🎯 orientation-fixed 유령 - 1마리
+    newGhosts.push({
+      ...createRandomGhost(),
+      type: "orientation-fixed",
+      targetAlpha: Math.random() * 360,
+      targetBeta: (Math.random() - 0.5) * 60,
+      tolerance: 30,
+      title: "🎯 회전감지 유령",
+    });
 
-      for (let i = 0; i < numGpsGhosts; i++) {
-        // ✅ 1-5m 초근거리로 수정
-        const distance = Math.random() * 4 + 1; // 1~5m 랜덤
-        const angle = Math.random() * 360; // 완전 랜덤 방향
+    // ✅ GPS 유령 - 고정된 특정 좌표에 배치
+    newGhosts.push({
+      ...createRandomGhost(),
+      type: "gps-fixed",
+      gpsLat: 35.2051749, // ✅ 지정된 위도
+      gpsLon: 126.8117561, // ✅ 지정된 경도
+      maxVisibleDistance: 100, // 100m 이내에서 보임
+      speed: 0,
+      isFixed: true,
+      title: "🌍 특정 위치 유령",
+    });
 
-        const latOffset =
-          (distance * Math.cos((angle * Math.PI) / 180)) / 111000;
-        const lonOffset =
-          (distance * Math.sin((angle * Math.PI) / 180)) /
-          (111000 * Math.cos((userLocation.latitude * Math.PI) / 180));
-
-        newGhosts.push({
-          ...createRandomGhost(),
-          type: "gps-fixed",
-          gpsLat: userLocation.latitude + latOffset,
-          gpsLon: userLocation.longitude + lonOffset,
-          maxVisibleDistance: 6, // 6m 이내에서만 보임
-          title: `초근거리 유령 ${i + 1}`,
-          targetDistance: distance,
-        });
-
-        console.log(
-          `👻 GPS 유령 ${i + 1}: ${distance.toFixed(1)}m 거리에 배치`
-        );
-      }
-    }
-
-    // 다른 타입들 추가
-    newGhosts.push(
-      {
-        ...createRandomGhost(),
-        type: "orientation-fixed",
-        targetAlpha: Math.random() * 360,
-        targetBeta: (Math.random() - 0.5) * 60,
-        tolerance: 30,
-      },
-      {
-        ...createRandomGhost(),
-        type: "always-visible",
-      }
-    );
+    // 👻 always-visible 유령 - 1마리
+    newGhosts.push({
+      ...createRandomGhost(),
+      type: "always-visible",
+      title: "👻 일반 유령",
+    });
 
     setGhosts(newGhosts);
     setScore(0);
     setTotalCaught(0);
 
+    console.log(`🎮 게임 시작: 총 ${newGhosts.length}마리 유령 생성`);
+    console.log(`📍 GPS 유령 위치: 35.20517490, 126.81175610`);
   }, []);
 
   const catchGhost = (index) => {
