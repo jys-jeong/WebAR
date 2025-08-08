@@ -204,9 +204,7 @@ const Map3D = () => {
   // 반경 내 마커 체크 및 AR 버튼 표시 조건 업데이트
   useEffect(() => {
     if (userLocation) {
-      const allMarkers = [
-        ...EXTRA_MARKERS,
-      ];
+      const allMarkers = [...EXTRA_MARKERS];
 
       const markersInRange = findMarkersWithinRadius(
         userLocation,
@@ -1328,21 +1326,6 @@ const Map3D = () => {
                   🎯 AR 기능 활성화됨
                 </div>
               )}
-            </div>
-
-            <div
-              style={{
-                marginTop: "8px",
-                padding: "5px 8px",
-                borderRadius: "5px",
-                backgroundColor: "rgba(102, 126, 234, 0.2)",
-                border: "1px solid #667eea",
-              }}
-            >
-              <strong>경로 추천:</strong> 마커 클릭
-              <div style={{ fontSize: "10px", marginTop: "2px" }}>
-                🗺️ 마커 클릭 시점 위치 기준
-              </div>
             </div>
           </div>
         </div>
