@@ -86,7 +86,7 @@ export const DirectionsControl = ({
       <div style={{ marginBottom: 8, fontSize: 12, color: "#666" }}>
         {destinationPoint ? (
           <>
-            목적지: {destinationPoint[0].toFixed(4)},{" "}
+            목적지: {destinationPoint[0].toFixed(4)}, {" "}
             {destinationPoint[1].toFixed(4)}
           </>
         ) : (
@@ -103,27 +103,7 @@ export const DirectionsControl = ({
           🔍 가장 가까운 마커: {closestMarker.title} ({minDistance.toFixed(1)}m)
         </div>
       )}
-      {excludedMarkers.length > 0 && (
-        <div
-          style={{
-            marginTop: 10,
-            fontSize: 11,
-            color: "#999",
-            background: "#f9f9f9",
-            padding: "6px",
-            borderRadius: 4,
-          }}
-        >
-          <div style={{ marginBottom: 4, fontWeight: "bold", fontSize: 12 }}>
-            ❌ 제외된 마커
-          </div>
-          <ul style={{ paddingLeft: 16, margin: 0 }}>
-            {excludedMarkers.map((title, idx) => (
-              <li key={idx}>{title}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <button
           onClick={onClearRoute}
@@ -161,6 +141,28 @@ export const DirectionsControl = ({
           </button>
         )}
       </div>
+
+      {excludedMarkers.length > 0 && (
+        <div
+          style={{
+            marginTop: 10,
+            fontSize: 11,
+            color: "#999",
+            background: "#f9f9f9",
+            padding: "6px",
+            borderRadius: 4,
+          }}
+        >
+          <div style={{ marginBottom: 4, fontWeight: "bold", fontSize: 12 }}>
+            ❌ 제외된 마커
+          </div>
+          <ul style={{ paddingLeft: 16, margin: 0 }}>
+            {excludedMarkers.map((title, idx) => (
+              <li key={idx}>{title}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };
