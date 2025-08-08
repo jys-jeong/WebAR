@@ -152,7 +152,7 @@ const Map3D = () => {
   const [showARButton, setShowARButton] = useState(false);
   const [closestMarker, setClosestMarker] = useState(null);
   const [closestDistance, setClosestDistance] = useState(null);
-  const [disabledMarkerTitle, setDisabledMarkerTitle] = useState(null);
+  const [disabledMarkerTitles, setDisabledMarkerTitles] = useState([]);
   // AR 관련 state
   const [isARActive, setIsARActive] = useState(false);
   const [selectedMarkerData, setSelectedMarkerData] = useState(null);
@@ -176,36 +176,30 @@ const Map3D = () => {
     console.log(`[${timestamp}] ${message}`);
   };
   useEffect(() => {
-    if (!userLocation) {
-      setClosestMarker(null);
-      setShowARButton(false);
-      return;
-    }
-    let minDist = Infinity;
-    let nearest = null;
-    EXTRA_MARKERS.forEach((m) => {
-      if (m.title === disabledMarkerTitle) return;
-      const d = calculateDistance(
-        userLocation[1],
-        userLocation[0],
-        m.lat,
-        m.lng
-      );
-      if (d < minDist) {
-        minDist = d;
-        nearest = m;
-      }
-    });
-    if (nearest && minDist <= 100) {
-      setClosestMarker(nearest);
-      setClosestDistance(Math.round(minDist));
-      setShowARButton(true);
-    } else {
-      setClosestMarker(null);
-      setClosestDistance(null);
-      setShowARButton(false);
-    }
-  }, [userLocation, disabledMarkerTitle]);
+  if (!userLocation) {
+    setNearbyMarkers([]);
+    setShowARButton(false);
+    return;
+  }
+
+  // 1) 비활성화된 마커는 제외
+  const activeMarkers = EXTRA_MARKERS.filter(
+    (m) => !disabledMarkerTitles.includes(m.title)
+  );
+
+  // 2) 나머지 마커 중 100m 이내 필터링
+  const markersInRange = findMarkersWithinRadius(
+    userLocation,
+    activeMarkers,
+    100
+  );
+
+  // 3) 상태 업데이트
+  setNearbyMarkers(markersInRange);
+  setShowARButton(markersInRange.length > 0);
+
+  mobileLog(`반경 100m 내 활성 마커: ${markersInRange.length}개`, "info");
+}, [userLocation, disabledMarkerTitles]);
   // 위치 상태 체크 함수 (모바일용)
   const checkLocationStatus = () => {
     mobileLog("=== 위치 정보 상태 체크 ===", "info");
@@ -830,7 +824,7 @@ const Map3D = () => {
       id: closestMarker.title,
     });
     setIsARActive(true);
-    setDisabledMarkerTitle(closestMarker.title);
+    setDisabledMarkerTitles(prev => [...prev, closestMarker.title]);
     setClosestMarker(null);
   };
 
