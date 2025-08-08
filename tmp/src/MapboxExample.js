@@ -1,14 +1,34 @@
 import React, { useRef, useEffect, useState } from "react";
 import mapboxgl from "mapbox-gl";
-import { CONFIG, EXTRA_MARKERS } from "./config";
-import { coordKey, findMarkersWithinRadius } from "./utils";
+import "mapbox-gl/dist/mapbox-gl.css";
+import { createRoot } from "react-dom/client";
 import { PinMarker } from "./PinMarker";
 import { DirectionsControl } from "./DirectionsControl";
 import SimpleAROverlay from "./ghost/SimpleAROverlay";
-import { createRoot } from "react-dom/client";
 
+// 상수 정의
+export const CONFIG = {
+  targetLng: 127.1465,
+  targetLat: 35.8477,
+  markerImageUrl: "/image.jpg",
+  mapboxToken: "pk.eyJ1IjoiamVvbmd5ZXNlb25nIiwiYSI6ImNtZHJldDNkODBmMW4yaXNhOGE1eWg4ODcifQ.LNsrvvxhCIJ6Lvwc9c0tVg",
+};
+
+const EXTRA_MARKERS = [
+  { lng: 126.81135176573412, lat: 35.20591968576515, title: "카페존", description: "아늑한 카페가 모인 공간" },
+  { lng: 126.81261528847895, lat: 35.20444510122409, title: "공원입구", description: "시민들의 휴식 공간" },
+  { lng: 126.81245924453228, lat: 35.20420911728499, title: "운동시설", description: "건강한 운동을 위한 시설" },
+  { lng: 126.81113524567193, lat: 35.20587354193161, title: "전망포인트", description: "주변 경치를 감상할 수 있는 곳" },
+  { lng: 126.81186114441181, lat: 35.2060250871764, title: "휴게소", description: "편안한 휴식을 위한 벤치" },
+  { lng: 126.81236661283437, lat: 35.20608358739791, title: "문화공간", description: "지역 문화를 체험하는 공간" },
+  { lng: 126.8121031129651, lat: 35.20542587191241, title: "산책로", description: "아름다운 산책을 위한 길" },
+  { lng: 126.81128999013566, lat: 35.204653382328154, title: "놀이터", description: "어린이를 위한 놀이 공간" },
+  { lng: 126.81171287340676, lat: 35.20501171992144, title: "피크닉존", description: "가족 나들이 최적 장소" },
+  { lng: 126.81124313750962, lat: 35.20520425881318, title: "포토스팟", description: "인스타 감성 사진 촬영지" }
+];
 
 mapboxgl.accessToken = CONFIG.mapboxToken;
+const coordKey = (coord) => `${coord[0].toFixed(8)},${coord[1].toFixed(8)}`;
 
 // Haversine 공식으로 두 좌표 간 거리 계산 (미터 단위)
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -26,7 +46,17 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; // 미터 단위 거리
 };
 
-
+// 반경 내 마커 찾기 함수
+const findMarkersWithinRadius = (userLocation, markers, radiusMeters = 100) => {
+  if (!userLocation) return [];
+  
+  const [userLng, userLat] = userLocation;
+  
+  return markers.filter(marker => {
+    const distance = calculateDistance(userLat, userLng, marker.lat, marker.lng);
+    return distance <= radiusMeters;
+  });
+};
 
 const Map3D = () => {
   // Refs
@@ -294,7 +324,6 @@ const Map3D = () => {
         trackUserLocation: true,
         showUserHeading: true,
         showAccuracyCircle: true,
-        showUserLocation: true,
       });
 
       map.current.addControl(geolocateControl.current, "bottom-right");
