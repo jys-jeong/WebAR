@@ -152,6 +152,7 @@ const Map3D = () => {
   const [showARButton, setShowARButton] = useState(false);
   const [closestMarker, setClosestMarker] = useState(null);
   const [closestDistance, setClosestDistance] = useState(null);
+  const [disabledMarkerTitle, setDisabledMarkerTitle] = useState(null);
   // AR 관련 state
   const [isARActive, setIsARActive] = useState(false);
   const [selectedMarkerData, setSelectedMarkerData] = useState(null);
@@ -183,6 +184,7 @@ const Map3D = () => {
     let minDist = Infinity;
     let nearest = null;
     EXTRA_MARKERS.forEach((m) => {
+      if (m.title === disabledMarkerTitle) return;
       const d = calculateDistance(
         userLocation[1],
         userLocation[0],
@@ -203,7 +205,7 @@ const Map3D = () => {
       setClosestDistance(null);
       setShowARButton(false);
     }
-  }, [userLocation]);
+  }, [userLocation, disabledMarkerTitle]);
   // 위치 상태 체크 함수 (모바일용)
   const checkLocationStatus = () => {
     mobileLog("=== 위치 정보 상태 체크 ===", "info");
@@ -828,6 +830,7 @@ const Map3D = () => {
       id: closestMarker.title,
     });
     setIsARActive(true);
+    setDisabledMarkerTitle(closestMarker.title);
   };
 
   // AR 종료 함수
