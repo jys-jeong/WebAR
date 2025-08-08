@@ -26,6 +26,7 @@ const EXTRA_MARKERS = [
   { lng: 126.81171287340676, lat: 35.20501171992144, title: "피크닉존", description: "가족 나들이 최적 장소" },
   { lng: 126.81124313750962, lat: 35.20520425881318, title: "포토스팟", description: "인스타 감성 사진 촬영지" }
 ];
+
 mapboxgl.accessToken = CONFIG.mapboxToken;
 const coordKey = (coord) => `${coord[0].toFixed(8)},${coord[1].toFixed(8)}`;
 
@@ -260,6 +261,7 @@ const Map3D = () => {
     });
 
     map.current.on("load", () => {
+      // 시작 마커를 초기에는 CONFIG 기준으로 설정하되, 내 위치가 확인되면 업데이트됨
       const startMarker = addRouteMarker(startPoint, "start");
       setRouteMarkers([startMarker]);
 
@@ -283,6 +285,22 @@ const Map3D = () => {
       }
     };
   }, []);
+
+  // 내 위치 기준으로 시작 마커 업데이트
+  useEffect(() => {
+    if (userLocation && routeMarkers.length > 0) {
+      // 기존 시작 마커 제거
+      if (routeMarkers[0]) {
+        routeMarkers[0].remove();
+      }
+      
+      // 내 위치에 새로운 시작 마커 추가
+      const newStartMarker = addRouteMarker(userLocation, "start");
+      setRouteMarkers((prev) => [newStartMarker, ...prev.slice(1)]);
+      
+      console.log("시작점이 내 위치로 업데이트됨:", userLocation);
+    }
+  }, [userLocation]);
 
   // 내 위치 직접 가져오기
   useEffect(() => {
@@ -328,13 +346,16 @@ const Map3D = () => {
     map.current.getSource("markers").setData(newGeojson);
   };
 
-  // 길찾기 함수
+  // 길찾기 함수 - 내 위치를 우선적으로 사용
   const getRoute = async (start, end) => {
+    // 내 위치가 있으면 내 위치를 시작점으로, 없으면 CONFIG 기본값 사용
+    const actualStart = userLocation || start;
+    
     setIsRouting(true);
 
     try {
       const response = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/walking/${start[0]},${start[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&access_token=${CONFIG.mapboxToken}&overview=full`
+        `https://api.mapbox.com/directions/v5/mapbox/walking/${actualStart[0]},${actualStart[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&access_token=${CONFIG.mapboxToken}&overview=full`
       );
 
       const data = await response.json();
@@ -343,7 +364,7 @@ const Map3D = () => {
         const routeData = data.routes[0];
         const routeCoords = routeData.geometry.coordinates;
 
-        const enhancedRoute = [start, ...routeCoords, end];
+        const enhancedRoute = [actualStart, ...routeCoords, end];
         const filteredRoute = enhancedRoute.filter((coord, index) => {
           if (index === 0) return true;
 
@@ -398,8 +419,10 @@ const Map3D = () => {
         const distance = (routeData.distance / 1000).toFixed(1);
         const duration = Math.round(routeData.duration / 60);
 
+        // 시작점 정보를 사용자에게 명확히 표시
+        const startLocationName = userLocation ? "현재 위치" : "기본 시작점";
         alert(
-          `경로 안내\n거리: ${distance}km\n예상 시간: ${duration}분\n경로 포인트: ${filteredRoute.length}개`
+          `${startLocationName} → 목적지 경로\n거리: ${distance}km\n예상 시간: ${duration}분\n경로 포인트: ${filteredRoute.length}개`
         );
       } else {
         alert("경로를 찾을 수 없습니다.");
@@ -419,8 +442,17 @@ const Map3D = () => {
       map.current.removeSource("route");
     }
 
+    // 목적지 마커만 제거 (시작 마커는 유지)
     routeMarkers.slice(1).forEach((marker) => marker.remove());
-    setRouteMarkers((prev) => prev.slice(0, 1));
+    
+    // 시작 마커를 내 위치 기준으로 재설정
+    if (routeMarkers[0]) {
+      routeMarkers[0].remove();
+    }
+    const actualStartPoint = userLocation || startPoint;
+    const newStartMarker = addRouteMarker(actualStartPoint, "start");
+    setRouteMarkers([newStartMarker]);
+    
     setDestinationPoint(null);
     updateClusterData(null);
   };
@@ -469,8 +501,9 @@ const Map3D = () => {
 
     updateClusterData(coords);
     
-    const startLocation = userLocation || startPoint;
-    getRoute(startLocation, coords);
+    // 내 위치를 우선적으로 사용, 없으면 기본 시작점 사용
+    const actualStartLocation = userLocation || startPoint;
+    getRoute(actualStartLocation, coords);
   };
 
   const handlePinMarkerClick = (coords, feature) => {
@@ -778,6 +811,20 @@ const Map3D = () => {
                   🎯 AR 기능 활성화됨
                 </div>
               )}
+            </div>
+            
+            {/* 길찾기 시작점 표시 추가 */}
+            <div style={{ 
+              marginTop: "8px", 
+              padding: "5px 8px", 
+              borderRadius: "5px",
+              backgroundColor: "rgba(33, 150, 243, 0.2)",
+              border: "1px solid #2196F3"
+            }}>
+              <strong>길찾기 시작점:</strong> 현재 위치
+              <div style={{ fontSize: "10px", marginTop: "2px" }}>
+                🚀 내 위치 기준 경로
+              </div>
             </div>
           </div>
 
