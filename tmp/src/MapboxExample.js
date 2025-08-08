@@ -65,6 +65,8 @@ const Map3D = () => {
   const domMarkerMap = useRef(new Map());
   const geolocateControl = useRef(null);
   const watchId = useRef(null);
+  const hasCenteredOnUser = useRef(false);
+  const isInitialized = useRef(false); // ✅ 중복 초기화 방지
 
   // State
   const [destinationPoint, setDestinationPoint] = useState(null);
@@ -74,8 +76,8 @@ const Map3D = () => {
   const [isLocationTracking, setIsLocationTracking] = useState(false);
   const [locationAccuracy, setLocationAccuracy] = useState(null);
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
-  const [nearbyMarkers, setNearbyMarkers] = useState([]); // 반경 내 마커들
-  const [showARButton, setShowARButton] = useState(false); // AR 버튼 표시 여부
+  const [nearbyMarkers, setNearbyMarkers] = useState([]);
+  const [showARButton, setShowARButton] = useState(false);
 
   // AR 관련 state
   const [isARActive, setIsARActive] = useState(false);
@@ -102,6 +104,19 @@ const Map3D = () => {
     }
   }, [userLocation]);
 
+  // 사용자 위치로 지도 센터링 (한번만)
+  const centerMapToUserLocation = (userCoords, zoomLevel = 16) => {
+    if (map.current && !hasCenteredOnUser.current) {
+      map.current.easeTo({
+        center: userCoords,
+        zoom: zoomLevel,
+        duration: 2000
+      });
+      hasCenteredOnUser.current = true;
+      console.log("지도가 사용자 위치로 센터링됨:", userCoords);
+    }
+  };
+
   // 실시간 위치 추적 시작
   const startLocationTracking = () => {
     if (!navigator.geolocation) {
@@ -124,12 +139,9 @@ const Map3D = () => {
         setLocationAccuracy(accuracy);
         setLastUpdateTime(new Date().toLocaleTimeString());
 
-        if (map.current && map.current.isStyleLoaded() && !watchId.current) {
-          map.current.easeTo({
-            center: userCoords,
-            zoom: 16,
-            duration: 1000
-          });
+        // 최초 한번만 지도 센터링
+        if (map.current && map.current.isStyleLoaded()) {
+          centerMapToUserLocation(userCoords);
         }
 
         console.log("실시간 위치 업데이트:", userCoords, "정확도:", accuracy, "m");
@@ -140,8 +152,8 @@ const Map3D = () => {
       },
       {
         enableHighAccuracy: true,
-        timeout: 5000,
-        maximumAge: 1000
+        timeout: 10000, // ✅ 타임아웃 연장 (5초 → 10초)
+        maximumAge: 5000 // ✅ 캐시 시간 증가 (1초 → 5초)
       }
     );
   };
@@ -205,75 +217,153 @@ const Map3D = () => {
     };
   };
 
-  // 지도 초기화
-  useEffect(() => {
-    if (map.current) return;
+  // ✅ 소스와 레이어 안전 제거 함수
+  const safeRemoveSourceAndLayers = (sourceId) => {
+    if (!map.current) return;
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
-      center: [CONFIG.targetLng, CONFIG.targetLat],
-      zoom: 15,
-      pitch: 60,
-      bearing: -17.6,
-      antialias: true,
-    });
-
-    map.current.addControl(
-      new mapboxgl.NavigationControl({
-        visualizePitch: true,
-        showCompass: true,
-        showZoom: true,
-      }),
-      "bottom-right"
-    );
-
-    geolocateControl.current = new mapboxgl.GeolocateControl({
-      positionOptions: { 
-        enableHighAccuracy: true,
-        timeout: 6000,
-        maximumAge: 0
-      },
-      trackUserLocation: true,
-      showUserHeading: true,
-      showAccuracyCircle: true,
-    });
-
-    map.current.addControl(geolocateControl.current, "bottom-right");
-
-    geolocateControl.current.on('geolocate', (e) => {
-      const userCoords = [e.coords.longitude, e.coords.latitude];
-      setUserLocation(userCoords);
-      setLocationAccuracy(e.coords.accuracy);
-      setLastUpdateTime(new Date().toLocaleTimeString());
-      
-      map.current.easeTo({
-        center: userCoords,
-        zoom: 16,
-        duration: 2000
+    try {
+      // 관련 레이어들 먼저 제거
+      const layersToRemove = ['clusters', 'cluster-count', 'route'];
+      layersToRemove.forEach(layerId => {
+        if (map.current.getLayer(layerId)) {
+          map.current.removeLayer(layerId);
+        }
       });
 
-      console.log("내 위치:", userCoords);
-    });
+      // 소스 제거
+      if (map.current.getSource(sourceId)) {
+        map.current.removeSource(sourceId);
+      }
+    } catch (error) {
+      console.warn(`소스 제거 중 오류 (무시됨): ${error.message}`);
+    }
+  };
 
-    geolocateControl.current.on('error', (e) => {
-      console.warn('위치를 찾을 수 없습니다:', e);
-    });
+  // 지도 초기화
+  useEffect(() => {
+    // ✅ 중복 초기화 방지
+    if (isInitialized.current || map.current) return;
+    isInitialized.current = true;
 
-    map.current.on("load", () => {
-      // 시작 마커를 초기에는 CONFIG 기준으로 설정하되, 내 위치가 확인되면 업데이트됨
-      const startMarker = addRouteMarker(startPoint, "start");
-      setRouteMarkers([startMarker]);
+    // 먼저 사용자 위치를 시도하고, 실패하면 CONFIG 좌표로 초기화
+    const initializeMap = (center) => {
+      // ✅ 기존 지도 컨테이너 내용 정리
+      if (mapContainer.current) {
+        mapContainer.current.innerHTML = '';
+      }
 
-      setTimeout(() => {
-        geolocateControl.current.trigger();
-        startLocationTracking();
-      }, 1000);
-    });
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: "mapbox://styles/mapbox/streets-v12",
+        center: center,
+        zoom: 15,
+        pitch: 60,
+        bearing: -17.6,
+        antialias: true,
+        // ✅ 추가 설정으로 안정성 향상
+        preserveDrawingBuffer: true,
+        renderWorldCopies: false
+      });
+
+      map.current.addControl(
+        new mapboxgl.NavigationControl({
+          visualizePitch: true,
+          showCompass: true,
+          showZoom: true,
+        }),
+        "bottom-right"
+      );
+
+      geolocateControl.current = new mapboxgl.GeolocateControl({
+        positionOptions: { 
+          enableHighAccuracy: true,
+          timeout: 10000, // ✅ 타임아웃 연장
+          maximumAge: 5000 // ✅ 캐시 시간 증가
+        },
+        trackUserLocation: true,
+        showUserHeading: true,
+        showAccuracyCircle: true,
+      });
+
+      map.current.addControl(geolocateControl.current, "bottom-right");
+
+      geolocateControl.current.on('geolocate', (e) => {
+        const userCoords = [e.coords.longitude, e.coords.latitude];
+        setUserLocation(userCoords);
+        setLocationAccuracy(e.coords.accuracy);
+        setLastUpdateTime(new Date().toLocaleTimeString());
+        
+        centerMapToUserLocation(userCoords);
+        console.log("내 위치:", userCoords);
+      });
+
+      geolocateControl.current.on('error', (e) => {
+        console.warn('위치를 찾을 수 없습니다:', e);
+      });
+
+      map.current.on("load", () => {
+        try {
+          const initialStartPoint = center;
+          const startMarker = addRouteMarker(initialStartPoint, "start");
+          setRouteMarkers([startMarker]);
+
+          // ✅ 안전하게 레이어 설정
+          setupMapLayers();
+
+          // ✅ 딜레이 후 위치 서비스 시작
+          setTimeout(() => {
+            if (geolocateControl.current) {
+              geolocateControl.current.trigger();
+            }
+            // 더 긴 딜레이 후 실시간 추적 시작
+            setTimeout(() => {
+              startLocationTracking();
+            }, 2000);
+          }, 1000);
+        } catch (error) {
+          console.error("지도 로드 후 초기화 오류:", error);
+        }
+      });
+
+      // ✅ 지도 에러 핸들링
+      map.current.on('error', (e) => {
+        console.error('Mapbox 에러:', e);
+      });
+    };
+
+    // 사용자 위치를 먼저 시도
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const userCoords = [position.coords.longitude, position.coords.latitude];
+          setUserLocation(userCoords);
+          setLocationAccuracy(position.coords.accuracy);
+          setLastUpdateTime(new Date().toLocaleTimeString());
+          
+          console.log("초기 사용자 위치로 지도 초기화:", userCoords);
+          initializeMap(userCoords);
+          hasCenteredOnUser.current = true;
+        },
+        (error) => {
+          console.warn('초기 위치 가져오기 실패, CONFIG 좌표로 초기화:', error.message);
+          initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
+        },
+        { 
+          enableHighAccuracy: true,
+          timeout: 10000, // ✅ 타임아웃 연장
+          maximumAge: 5000 // ✅ 캐시 시간 증가
+        }
+      );
+    } else {
+      console.warn('위치 서비스 미지원, CONFIG 좌표로 초기화');
+      initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
+    }
 
     return () => {
+      // ✅ 완전한 정리
       if (watchId.current) {
         navigator.geolocation.clearWatch(watchId.current);
+        watchId.current = null;
       }
       
       domMarkerMap.current.forEach((marker) => marker.remove());
@@ -283,75 +373,53 @@ const Map3D = () => {
         map.current.remove();
         map.current = null;
       }
+      
+      isInitialized.current = false;
     };
-  }, []);
+  }, []); // ✅ 의존성 배열 비움
 
   // 내 위치 기준으로 시작 마커 업데이트
   useEffect(() => {
-    if (userLocation && routeMarkers.length > 0) {
-      // 기존 시작 마커 제거
-      if (routeMarkers[0]) {
-        routeMarkers[0].remove();
+    if (userLocation && routeMarkers.length > 0 && map.current) {
+      try {
+        // 기존 시작 마커 제거
+        if (routeMarkers[0]) {
+          routeMarkers[0].remove();
+        }
+        
+        // 내 위치에 새로운 시작 마커 추가
+        const newStartMarker = addRouteMarker(userLocation, "start");
+        setRouteMarkers((prev) => [newStartMarker, ...prev.slice(1)]);
+        
+        console.log("시작점이 내 위치로 업데이트됨:", userLocation);
+      } catch (error) {
+        console.warn("시작 마커 업데이트 오류:", error);
       }
-      
-      // 내 위치에 새로운 시작 마커 추가
-      const newStartMarker = addRouteMarker(userLocation, "start");
-      setRouteMarkers((prev) => [newStartMarker, ...prev.slice(1)]);
-      
-      console.log("시작점이 내 위치로 업데이트됨:", userLocation);
     }
   }, [userLocation]);
-
-  // 내 위치 직접 가져오기
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      console.warn('이 브라우저는 위치 서비스를 지원하지 않습니다.');
-      return;
-    }
-
-    const getCurrentLocation = () => {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const userCoords = [position.coords.longitude, position.coords.latitude];
-          setUserLocation(userCoords);
-          setLocationAccuracy(position.coords.accuracy);
-          setLastUpdateTime(new Date().toLocaleTimeString());
-          
-          if (map.current && map.current.isStyleLoaded()) {
-            map.current.easeTo({
-              center: userCoords,
-              zoom: 16,
-              duration: 2000
-            });
-          }
-        },
-        (error) => {
-          console.warn('위치 접근이 거부되었거나 오류가 발생했습니다:', error.message);
-        },
-        { 
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        }
-      );
-    };
-
-    getCurrentLocation();
-  }, []);
 
   // 클러스터 데이터 업데이트
   const updateClusterData = (excludeDestination = null) => {
     if (!map.current?.getSource("markers")) return;
-    const newGeojson = createGeojson(excludeDestination);
-    map.current.getSource("markers").setData(newGeojson);
+    
+    try {
+      const newGeojson = createGeojson(excludeDestination);
+      map.current.getSource("markers").setData(newGeojson);
+    } catch (error) {
+      console.warn("클러스터 데이터 업데이트 오류:", error);
+    }
   };
 
-  // 길찾기 함수 - 내 위치를 우선적으로 사용
+  // 길찾기 함수
   const getRoute = async (start, end) => {
-    // 내 위치가 있으면 내 위치를 시작점으로, 없으면 CONFIG 기본값 사용
-    const actualStart = userLocation || start;
-    
+    if (!userLocation) {
+      alert("사용자 위치를 찾을 수 없습니다. 위치 서비스를 활성화해주세요.");
+      return;
+    }
+
+    const actualStart = userLocation;
     setIsRouting(true);
+    console.log("길찾기 시작:", actualStart, "→", end);
 
     try {
       const response = await fetch(
@@ -367,20 +435,16 @@ const Map3D = () => {
         const enhancedRoute = [actualStart, ...routeCoords, end];
         const filteredRoute = enhancedRoute.filter((coord, index) => {
           if (index === 0) return true;
-
           const prevCoord = enhancedRoute[index - 1];
           const distance = Math.sqrt(
             Math.pow(coord[0] - prevCoord[0], 2) +
             Math.pow(coord[1] - prevCoord[1], 2)
           );
-
           return distance > 0.00001;
         });
 
-        if (map.current.getSource("route")) {
-          map.current.removeLayer("route");
-          map.current.removeSource("route");
-        }
+        // ✅ 안전하게 기존 경로 제거
+        safeRemoveSourceAndLayers("route");
 
         map.current.addSource("route", {
           type: "geojson",
@@ -419,11 +483,11 @@ const Map3D = () => {
         const distance = (routeData.distance / 1000).toFixed(1);
         const duration = Math.round(routeData.duration / 60);
 
-        // 시작점 정보를 사용자에게 명확히 표시
-        const startLocationName = userLocation ? "현재 위치" : "기본 시작점";
         alert(
-          `${startLocationName} → 목적지 경로\n거리: ${distance}km\n예상 시간: ${duration}분\n경로 포인트: ${filteredRoute.length}개`
+          `현재 위치 → 목적지 경로\n거리: ${distance}km\n예상 시간: ${duration}분\n경로 포인트: ${filteredRoute.length}개`
         );
+
+        console.log("경로 표시 완료");
       } else {
         alert("경로를 찾을 수 없습니다.");
       }
@@ -437,15 +501,10 @@ const Map3D = () => {
 
   // 경로 초기화
   const clearRoute = () => {
-    if (map.current.getSource("route")) {
-      map.current.removeLayer("route");
-      map.current.removeSource("route");
-    }
+    safeRemoveSourceAndLayers("route");
 
-    // 목적지 마커만 제거 (시작 마커는 유지)
     routeMarkers.slice(1).forEach((marker) => marker.remove());
     
-    // 시작 마커를 내 위치 기준으로 재설정
     if (routeMarkers[0]) {
       routeMarkers[0].remove();
     }
@@ -459,6 +518,8 @@ const Map3D = () => {
 
   // 경로 마커 추가
   const addRouteMarker = (coords, type) => {
+    if (!map.current) return null;
+
     const element = document.createElement("div");
     
     Object.assign(element.style, {
@@ -491,6 +552,8 @@ const Map3D = () => {
 
   // 이벤트 핸들러들
   const handleRouteMarkerClick = (coords) => {
+    console.log("마커 클릭됨, 경로 계산 시작:", coords);
+
     if (routeMarkers.length > 1) {
       routeMarkers.slice(1).forEach((marker) => marker.remove());
     }
@@ -501,9 +564,11 @@ const Map3D = () => {
 
     updateClusterData(coords);
     
-    // 내 위치를 우선적으로 사용, 없으면 기본 시작점 사용
-    const actualStartLocation = userLocation || startPoint;
-    getRoute(actualStartLocation, coords);
+    if (userLocation) {
+      getRoute(userLocation, coords);
+    } else {
+      alert("사용자 위치를 찾을 수 없습니다.");
+    }
   };
 
   const handlePinMarkerClick = (coords, feature) => {
@@ -581,49 +646,56 @@ const Map3D = () => {
 
   // DOM 마커 업데이트
   const updateDOMMarkers = () => {
-    if (!map.current.getSource("markers")) return;
+    if (!map.current?.getSource("markers")) return;
     
-    const features = map.current.querySourceFeatures("markers") || [];
-    const singlePoints = features.filter((f) => !f.properties.point_count);
+    try {
+      const features = map.current.querySourceFeatures("markers") || [];
+      const singlePoints = features.filter((f) => !f.properties.point_count);
 
-    const newKeys = new Set();
-    
-    singlePoints.forEach((feature) => {
-      const coordArr = feature.geometry.coordinates;
-      const key = coordKey(coordArr);
-      newKeys.add(key);
+      const newKeys = new Set();
       
-      if (!domMarkerMap.current.has(key)) {
-        const element = document.createElement("div");
+      singlePoints.forEach((feature) => {
+        const coordArr = feature.geometry.coordinates;
+        const key = coordKey(coordArr);
+        newKeys.add(key);
         
-        createRoot(element).render(
-          <PinMarker
-            imageUrl={CONFIG.markerImageUrl}
-            onClick={() => handlePinMarkerClick(coordArr, feature)}
-          />
-        );
-        
-        const marker = new mapboxgl.Marker(element)
-          .setLngLat(coordArr)
-          .addTo(map.current);
+        if (!domMarkerMap.current.has(key)) {
+          const element = document.createElement("div");
           
-        domMarkerMap.current.set(key, marker);
-      }
-    });
+          createRoot(element).render(
+            <PinMarker
+              imageUrl={CONFIG.markerImageUrl}
+              onClick={() => handlePinMarkerClick(coordArr, feature)}
+            />
+          );
+          
+          const marker = new mapboxgl.Marker(element)
+            .setLngLat(coordArr)
+            .addTo(map.current);
+            
+          domMarkerMap.current.set(key, marker);
+        }
+      });
 
-    Array.from(domMarkerMap.current.keys()).forEach((key) => {
-      if (!newKeys.has(key)) {
-        domMarkerMap.current.get(key).remove();
-        domMarkerMap.current.delete(key);
-      }
-    });
+      Array.from(domMarkerMap.current.keys()).forEach((key) => {
+        if (!newKeys.has(key)) {
+          domMarkerMap.current.get(key).remove();
+          domMarkerMap.current.delete(key);
+        }
+      });
+    } catch (error) {
+      console.warn("DOM 마커 업데이트 오류:", error);
+    }
   };
 
-  // 클러스터 및 3D 빌딩 레이어 설정
-  useEffect(() => {
+  // ✅ 안전한 레이어 설정
+  const setupMapLayers = () => {
     if (!map.current) return;
 
-    map.current.on("load", () => {
+    try {
+      // ✅ 기존 소스/레이어 안전 제거
+      safeRemoveSourceAndLayers("markers");
+
       map.current.addSource("markers", {
         type: "geojson",
         data: createGeojson(),
@@ -714,8 +786,10 @@ const Map3D = () => {
       ["move", "zoom", "idle"].forEach((event) => {
         map.current.on(event, updateDOMMarkers);
       });
-    });
-  }, []);
+    } catch (error) {
+      console.error("레이어 설정 오류:", error);
+    }
+  };
 
   return (
     <div 
@@ -813,7 +887,6 @@ const Map3D = () => {
               )}
             </div>
             
-            {/* 길찾기 시작점 표시 추가 */}
             <div style={{ 
               marginTop: "8px", 
               padding: "5px 8px", 
@@ -898,7 +971,7 @@ const Map3D = () => {
         </button>
       )}
 
-      {/* 조건부 AR 버튼 - 반경 100m 내에 마커가 있을 때만 표시 */}
+      {/* 조건부 AR 버튼 */}
       {showARButton && (
         <button
           onClick={handleARButtonClick}
