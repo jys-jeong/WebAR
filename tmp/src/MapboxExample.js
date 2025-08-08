@@ -14,17 +14,34 @@ export const CONFIG = {
   mapboxToken: "pk.eyJ1IjoiamVvbmd5ZXNlb25nIiwiYSI6ImNtZHJldDNkODBmMW4yaXNhOGE1eWg4ODcifQ.LNsrvvxhCIJ6Lvwc9c0tVg",
 };
 
-const EXTRA_MARKERS = [
-  { lng: 126.81135176573412, lat: 35.20591968576515, title: "카페존", description: "아늑한 카페가 모인 공간" },
-  { lng: 126.81261528847895, lat: 35.20444510122409, title: "공원입구", description: "시민들의 휴식 공간" },
-  { lng: 126.81245924453228, lat: 35.20420911728499, title: "운동시설", description: "건강한 운동을 위한 시설" },
-  { lng: 126.81113524567193, lat: 35.20587354193161, title: "전망포인트", description: "주변 경치를 감상할 수 있는 곳" },
-  { lng: 126.81186114441181, lat: 35.2060250871764, title: "휴게소", description: "편안한 휴식을 위한 벤치" },
-  { lng: 126.81236661283437, lat: 35.20608358739791, title: "문화공간", description: "지역 문화를 체험하는 공간" },
-  { lng: 126.8121031129651, lat: 35.20542587191241, title: "산책로", description: "아름다운 산책을 위한 길" },
-  { lng: 126.81128999013566, lat: 35.204653382328154, title: "놀이터", description: "어린이를 위한 놀이 공간" },
-  { lng: 126.81171287340676, lat: 35.20501171992144, title: "피크닉존", description: "가족 나들이 최적 장소" },
-  { lng: 126.81124313750962, lat: 35.20520425881318, title: "포토스팟", description: "인스타 감성 사진 촬영지" }
+// const EXTRA_MARKERS = [
+//   { lng: 126.81135176573412, lat: 35.20591968576515, title: "카페존", description: "아늑한 카페가 모인 공간" },
+//   { lng: 126.81261528847895, lat: 35.20444510122409, title: "공원입구", description: "시민들의 휴식 공간" },
+//   { lng: 126.81245924453228, lat: 35.20420911728499, title: "운동시설", description: "건강한 운동을 위한 시설" },
+//   { lng: 126.81113524567193, lat: 35.20587354193161, title: "전망포인트", description: "주변 경치를 감상할 수 있는 곳" },
+//   { lng: 126.81186114441181, lat: 35.2060250871764, title: "휴게소", description: "편안한 휴식을 위한 벤치" },
+//   { lng: 126.81236661283437, lat: 35.20608358739791, title: "문화공간", description: "지역 문화를 체험하는 공간" },
+//   { lng: 126.8121031129651, lat: 35.20542587191241, title: "산책로", description: "아름다운 산책을 위한 길" },
+//   { lng: 126.81128999013566, lat: 35.204653382328154, title: "놀이터", description: "어린이를 위한 놀이 공간" },
+//   { lng: 126.81171287340676, lat: 35.20501171992144, title: "피크닉존", description: "가족 나들이 최적 장소" },
+//   { lng: 126.81124313750962, lat: 35.20520425881318, title: "포토스팟", description: "인스타 감성 사진 촬영지" }
+// ];
+// 기존 EXTRA_MARKERS는 주석 처리/수정하지 말고…
+
+const MARKER_CENTER = { lng: 126.82287685, lat: 35.18376162 };
+
+// 기준 좌표 중심으로 10개 마커 랜덤 배치 (약 100~200m 반경)
+export const EXTRA_MARKERS = [
+  { lng: MARKER_CENTER.lng + 0.0012, lat: MARKER_CENTER.lat + 0.0010, title: "커피마을", description: "향긋한 커피가 있는 곳" },
+  { lng: MARKER_CENTER.lng - 0.0011, lat: MARKER_CENTER.lat - 0.0007, title: "헬스존", description: "건강을 위한 헬스장" },
+  { lng: MARKER_CENTER.lng + 0.0008, lat: MARKER_CENTER.lat - 0.0012, title: "피크닉장", description: "야외 피크닉 명소" },
+  { lng: MARKER_CENTER.lng - 0.0009, lat: MARKER_CENTER.lat + 0.0005, title: "놀이터", description: "아이들이 뛰노는 놀이터" },
+  { lng: MARKER_CENTER.lng + 0.0015, lat: MARKER_CENTER.lat + 0.0006, title: "전망대", description: "넓은 경치를 볼 수 있는 전망대" },
+  { lng: MARKER_CENTER.lng - 0.0013, lat: MARKER_CENTER.lat + 0.0014, title: "사진스팟", description: "인생샷 명소" },
+  { lng: MARKER_CENTER.lng + 0.0006, lat: MARKER_CENTER.lat - 0.0008, title: "문화의 거리", description: "지역 문화 예술 공간" },
+  { lng: MARKER_CENTER.lng - 0.0017, lat: MARKER_CENTER.lat - 0.0004, title: "쉼터", description: "잔디와 벤치가 있는 쉼터" },
+  { lng: MARKER_CENTER.lng + 0.0013, lat: MARKER_CENTER.lat - 0.0005, title: "맛집거리", description: "다양한 음식점이 모인 거리" },
+  { lng: MARKER_CENTER.lng - 0.0004, lat: MARKER_CENTER.lat + 0.0017, title: "산책길", description: "산책과 운동 겸하기 좋은 길" },
 ];
 
 mapboxgl.accessToken = CONFIG.mapboxToken;
