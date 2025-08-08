@@ -66,12 +66,12 @@ const Map3D = () => {
   const geolocateControl = useRef(null);
   const watchId = useRef(null);
   const hasCenteredOnUser = useRef(false);
-  const isInitialized = useRef(false); // ✅ 중복 초기화 방지
+  const isInitialized = useRef(false);
 
   // State
   const [destinationPoint, setDestinationPoint] = useState(null);
   const [isRouting, setIsRouting] = useState(false);
-  const [routeMarkers, setRouteMarkers] = useState([]);
+  // ✅ routeMarkers 제거 - S, E 마커를 더 이상 사용하지 않음
   const [userLocation, setUserLocation] = useState(null);
   const [isLocationTracking, setIsLocationTracking] = useState(false);
   const [locationAccuracy, setLocationAccuracy] = useState(null);
@@ -152,8 +152,8 @@ const Map3D = () => {
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000, // ✅ 타임아웃 연장 (5초 → 10초)
-        maximumAge: 5000 // ✅ 캐시 시간 증가 (1초 → 5초)
+        timeout: 10000,
+        maximumAge: 5000
       }
     );
   };
@@ -217,7 +217,7 @@ const Map3D = () => {
     };
   };
 
-  // ✅ 소스와 레이어 안전 제거 함수
+  // 소스와 레이어 안전 제거 함수
   const safeRemoveSourceAndLayers = (sourceId) => {
     if (!map.current) return;
 
@@ -241,13 +241,10 @@ const Map3D = () => {
 
   // 지도 초기화
   useEffect(() => {
-    // ✅ 중복 초기화 방지
     if (isInitialized.current || map.current) return;
     isInitialized.current = true;
 
-    // 먼저 사용자 위치를 시도하고, 실패하면 CONFIG 좌표로 초기화
     const initializeMap = (center) => {
-      // ✅ 기존 지도 컨테이너 내용 정리
       if (mapContainer.current) {
         mapContainer.current.innerHTML = '';
       }
@@ -260,7 +257,6 @@ const Map3D = () => {
         pitch: 60,
         bearing: -17.6,
         antialias: true,
-        // ✅ 추가 설정으로 안정성 향상
         preserveDrawingBuffer: true,
         renderWorldCopies: false
       });
@@ -277,8 +273,8 @@ const Map3D = () => {
       geolocateControl.current = new mapboxgl.GeolocateControl({
         positionOptions: { 
           enableHighAccuracy: true,
-          timeout: 10000, // ✅ 타임아웃 연장
-          maximumAge: 5000 // ✅ 캐시 시간 증가
+          timeout: 10000,
+          maximumAge: 5000
         },
         trackUserLocation: true,
         showUserHeading: true,
@@ -303,19 +299,13 @@ const Map3D = () => {
 
       map.current.on("load", () => {
         try {
-          const initialStartPoint = center;
-          const startMarker = addRouteMarker(initialStartPoint, "start");
-          setRouteMarkers([startMarker]);
-
-          // ✅ 안전하게 레이어 설정
+          // ✅ S 마커 제거 - 더 이상 시작 마커를 표시하지 않음
           setupMapLayers();
 
-          // ✅ 딜레이 후 위치 서비스 시작
           setTimeout(() => {
             if (geolocateControl.current) {
               geolocateControl.current.trigger();
             }
-            // 더 긴 딜레이 후 실시간 추적 시작
             setTimeout(() => {
               startLocationTracking();
             }, 2000);
@@ -325,7 +315,6 @@ const Map3D = () => {
         }
       });
 
-      // ✅ 지도 에러 핸들링
       map.current.on('error', (e) => {
         console.error('Mapbox 에러:', e);
       });
@@ -350,8 +339,8 @@ const Map3D = () => {
         },
         { 
           enableHighAccuracy: true,
-          timeout: 10000, // ✅ 타임아웃 연장
-          maximumAge: 5000 // ✅ 캐시 시간 증가
+          timeout: 10000,
+          maximumAge: 5000
         }
       );
     } else {
@@ -360,7 +349,6 @@ const Map3D = () => {
     }
 
     return () => {
-      // ✅ 완전한 정리
       if (watchId.current) {
         navigator.geolocation.clearWatch(watchId.current);
         watchId.current = null;
@@ -376,27 +364,9 @@ const Map3D = () => {
       
       isInitialized.current = false;
     };
-  }, []); // ✅ 의존성 배열 비움
+  }, []);
 
-  // 내 위치 기준으로 시작 마커 업데이트
-  useEffect(() => {
-    if (userLocation && routeMarkers.length > 0 && map.current) {
-      try {
-        // 기존 시작 마커 제거
-        if (routeMarkers[0]) {
-          routeMarkers[0].remove();
-        }
-        
-        // 내 위치에 새로운 시작 마커 추가
-        const newStartMarker = addRouteMarker(userLocation, "start");
-        setRouteMarkers((prev) => [newStartMarker, ...prev.slice(1)]);
-        
-        console.log("시작점이 내 위치로 업데이트됨:", userLocation);
-      } catch (error) {
-        console.warn("시작 마커 업데이트 오류:", error);
-      }
-    }
-  }, [userLocation]);
+  // ✅ 시작 마커 업데이트 로직 제거 - 더 이상 필요하지 않음
 
   // 클러스터 데이터 업데이트
   const updateClusterData = (excludeDestination = null) => {
@@ -410,20 +380,19 @@ const Map3D = () => {
     }
   };
 
-  // 길찾기 함수
-  const getRoute = async (start, end) => {
+  // ✅ 간소화된 길찾기 함수 - 마커 클릭 시 바로 경로 표시
+  const getRoute = async (end) => {
     if (!userLocation) {
       alert("사용자 위치를 찾을 수 없습니다. 위치 서비스를 활성화해주세요.");
       return;
     }
 
-    const actualStart = userLocation;
     setIsRouting(true);
-    console.log("길찾기 시작:", actualStart, "→", end);
+    console.log("길찾기 시작:", userLocation, "→", end);
 
     try {
       const response = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/walking/${actualStart[0]},${actualStart[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&access_token=${CONFIG.mapboxToken}&overview=full`
+        `https://api.mapbox.com/directions/v5/mapbox/walking/${userLocation[0]},${userLocation[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&access_token=${CONFIG.mapboxToken}&overview=full`
       );
 
       const data = await response.json();
@@ -432,7 +401,7 @@ const Map3D = () => {
         const routeData = data.routes[0];
         const routeCoords = routeData.geometry.coordinates;
 
-        const enhancedRoute = [actualStart, ...routeCoords, end];
+        const enhancedRoute = [userLocation, ...routeCoords, end];
         const filteredRoute = enhancedRoute.filter((coord, index) => {
           if (index === 0) return true;
           const prevCoord = enhancedRoute[index - 1];
@@ -443,7 +412,7 @@ const Map3D = () => {
           return distance > 0.00001;
         });
 
-        // ✅ 안전하게 기존 경로 제거
+        // 안전하게 기존 경로 제거
         safeRemoveSourceAndLayers("route");
 
         map.current.addSource("route", {
@@ -483,8 +452,14 @@ const Map3D = () => {
         const distance = (routeData.distance / 1000).toFixed(1);
         const duration = Math.round(routeData.duration / 60);
 
+        // ✅ 목적지 정보 추가
+        const destination = EXTRA_MARKERS.find(marker => 
+          Math.abs(marker.lng - end[0]) < 0.000001 &&
+          Math.abs(marker.lat - end[1]) < 0.000001
+        );
+
         alert(
-          `현재 위치 → 목적지 경로\n거리: ${distance}km\n예상 시간: ${duration}분\n경로 포인트: ${filteredRoute.length}개`
+          `🚶‍♂️ ${destination?.title || '목적지'}로 가는 경로\n📏 거리: ${distance}km\n⏰ 예상 시간: ${duration}분\n📍 경로 포인트: ${filteredRoute.length}개`
         );
 
         console.log("경로 표시 완료");
@@ -499,81 +474,27 @@ const Map3D = () => {
     }
   };
 
-  // 경로 초기화
+  // ✅ 간소화된 경로 초기화
   const clearRoute = () => {
     safeRemoveSourceAndLayers("route");
-
-    routeMarkers.slice(1).forEach((marker) => marker.remove());
-    
-    if (routeMarkers[0]) {
-      routeMarkers[0].remove();
-    }
-    const actualStartPoint = userLocation || startPoint;
-    const newStartMarker = addRouteMarker(actualStartPoint, "start");
-    setRouteMarkers([newStartMarker]);
-    
     setDestinationPoint(null);
     updateClusterData(null);
   };
 
-  // 경로 마커 추가
-  const addRouteMarker = (coords, type) => {
-    if (!map.current) return null;
+  // ✅ 마커 추가 함수 제거 - S, E 마커를 더 이상 사용하지 않음
 
-    const element = document.createElement("div");
-    
-    Object.assign(element.style, {
-      width: "25px",
-      height: "25px",
-      borderRadius: "50%",
-      border: "3px solid white",
-      backgroundColor: type === "start" ? "#4CAF50" : "#F44336",
-      cursor: "pointer",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-      zIndex: "1000",
-    });
-
-    element.innerHTML = `
-      <div style="
-        color: white; 
-        font-size: 10px; 
-        font-weight: bold; 
-        text-align: center; 
-        line-height: 19px;
-      ">
-        ${type === "start" ? "S" : "E"}
-      </div>
-    `;
-
-    return new mapboxgl.Marker(element)
-      .setLngLat(coords)
-      .addTo(map.current);
-  };
-
-  // 이벤트 핸들러들
-  const handleRouteMarkerClick = (coords) => {
+  // ✅ 간소화된 이벤트 핸들러 - 마커 클릭 시 바로 경로 계산
+  const handlePinMarkerClick = (coords, feature) => {
     console.log("마커 클릭됨, 경로 계산 시작:", coords);
-
-    if (routeMarkers.length > 1) {
-      routeMarkers.slice(1).forEach((marker) => marker.remove());
-    }
-
+    
     setDestinationPoint(coords);
-    const endMarker = addRouteMarker(coords, "end");
-    setRouteMarkers((prev) => [prev[0], endMarker]);
-
     updateClusterData(coords);
     
     if (userLocation) {
-      getRoute(userLocation, coords);
+      getRoute(coords); // ✅ 바로 경로 계산
     } else {
-      alert("사용자 위치를 찾을 수 없습니다.");
+      alert("사용자 위치를 찾을 수 없습니다. 위치 서비스를 활성화해주세요.");
     }
-  };
-
-  const handlePinMarkerClick = (coords, feature) => {
-    console.log("개별 마커 클릭됨:", coords);
-    handleRouteMarkerClick(coords);
   };
 
   // AR 버튼 클릭 핸들러
@@ -688,12 +609,11 @@ const Map3D = () => {
     }
   };
 
-  // ✅ 안전한 레이어 설정
+  // 안전한 레이어 설정
   const setupMapLayers = () => {
     if (!map.current) return;
 
     try {
-      // ✅ 기존 소스/레이어 안전 제거
       safeRemoveSourceAndLayers("markers");
 
       map.current.addSource("markers", {
@@ -887,16 +807,17 @@ const Map3D = () => {
               )}
             </div>
             
+            {/* ✅ 경로 추천 안내 */}
             <div style={{ 
               marginTop: "8px", 
               padding: "5px 8px", 
               borderRadius: "5px",
-              backgroundColor: "rgba(33, 150, 243, 0.2)",
-              border: "1px solid #2196F3"
+              backgroundColor: "rgba(102, 126, 234, 0.2)",
+              border: "1px solid #667eea"
             }}>
-              <strong>길찾기 시작점:</strong> 현재 위치
+              <strong>경로 추천:</strong> 마커 클릭
               <div style={{ fontSize: "10px", marginTop: "2px" }}>
-                🚀 내 위치 기준 경로
+                🗺️ 실시간 위치 기반 경로
               </div>
             </div>
           </div>
