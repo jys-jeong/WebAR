@@ -15,18 +15,47 @@ export const CONFIG = {
 };
 
 const EXTRA_MARKERS = [
-  { lng: 127.14764312652059, lat: 35.84418165482111, title: "산책로 입구", description: "아름다운 산책로의 시작점" },
-  { lng: 127.14613156528183, lat: 35.84964804127036, title: "연못 쉼터", description: "연못가의 평화로운 휴식공간" },
-  { lng: 127.14214296827205, lat: 35.845700639080235, title: "벚꽃길", description: "봄철 벚꽃이 만개하는 길" },
-  { lng: 127.14984840092337, lat: 35.85156432205935, title: "전망대", description: "주변을 한눈에 볼 수 있는 곳" },
-  { lng: 127.14247370527909, lat: 35.84926823721113, title: "운동기구", description: "건강한 운동을 위한 공간" },
-  { lng: 127.14692305866805, lat: 35.852323070669286, title: "피크닉존", description: "가족 피크닉 장소" },
-  { lng: 127.14215263696799, lat: 35.846070049809214, title: "독서공간", description: "조용한 독서 공간" },
-  { lng: 127.14206556949755, lat: 35.84662512473487, title: "산책로 종점", description: "산책로의 마지막 지점" },
+  { lng: 126.81135176573412, lat: 35.20591968576515, title: "카페존", description: "아늑한 카페가 모인 공간" },
+  { lng: 126.81261528847895, lat: 35.20444510122409, title: "공원입구", description: "시민들의 휴식 공간" },
+  { lng: 126.81245924453228, lat: 35.20420911728499, title: "운동시설", description: "건강한 운동을 위한 시설" },
+  { lng: 126.81113524567193, lat: 35.20587354193161, title: "전망포인트", description: "주변 경치를 감상할 수 있는 곳" },
+  { lng: 126.81186114441181, lat: 35.2060250871764, title: "휴게소", description: "편안한 휴식을 위한 벤치" },
+  { lng: 126.81236661283437, lat: 35.20608358739791, title: "문화공간", description: "지역 문화를 체험하는 공간" },
+  { lng: 126.8121031129651, lat: 35.20542587191241, title: "산책로", description: "아름다운 산책을 위한 길" },
+  { lng: 126.81128999013566, lat: 35.204653382328154, title: "놀이터", description: "어린이를 위한 놀이 공간" },
+  { lng: 126.81171287340676, lat: 35.20501171992144, title: "피크닉존", description: "가족 나들이 최적 장소" },
+  { lng: 126.81124313750962, lat: 35.20520425881318, title: "포토스팟", description: "인스타 감성 사진 촬영지" }
 ];
-
 mapboxgl.accessToken = CONFIG.mapboxToken;
 const coordKey = (coord) => `${coord[0].toFixed(8)},${coord[1].toFixed(8)}`;
+
+// Haversine 공식으로 두 좌표 간 거리 계산 (미터 단위)
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371000; // 지구 반지름 (미터)
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // 미터 단위 거리
+};
+
+// 반경 내 마커 찾기 함수
+const findMarkersWithinRadius = (userLocation, markers, radiusMeters = 100) => {
+  if (!userLocation) return [];
+  
+  const [userLng, userLat] = userLocation;
+  
+  return markers.filter(marker => {
+    const distance = calculateDistance(userLat, userLng, marker.lat, marker.lng);
+    return distance <= radiusMeters;
+  });
+};
 
 const Map3D = () => {
   // Refs
@@ -34,22 +63,43 @@ const Map3D = () => {
   const map = useRef(null);
   const domMarkerMap = useRef(new Map());
   const geolocateControl = useRef(null);
-  const watchId = useRef(null); // 실시간 위치 추적 ID
+  const watchId = useRef(null);
 
   // State
   const [destinationPoint, setDestinationPoint] = useState(null);
   const [isRouting, setIsRouting] = useState(false);
   const [routeMarkers, setRouteMarkers] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
-  const [isLocationTracking, setIsLocationTracking] = useState(false); // 실시간 추적 상태
-  const [locationAccuracy, setLocationAccuracy] = useState(null); // 위치 정확도
-  const [lastUpdateTime, setLastUpdateTime] = useState(null); // 마지막 업데이트 시간
+  const [isLocationTracking, setIsLocationTracking] = useState(false);
+  const [locationAccuracy, setLocationAccuracy] = useState(null);
+  const [lastUpdateTime, setLastUpdateTime] = useState(null);
+  const [nearbyMarkers, setNearbyMarkers] = useState([]); // 반경 내 마커들
+  const [showARButton, setShowARButton] = useState(false); // AR 버튼 표시 여부
 
   // AR 관련 state
   const [isARActive, setIsARActive] = useState(false);
   const [selectedMarkerData, setSelectedMarkerData] = useState(null);
 
   const startPoint = [CONFIG.targetLng, CONFIG.targetLat];
+
+  // 반경 내 마커 체크 및 AR 버튼 표시 조건 업데이트
+  useEffect(() => {
+    if (userLocation) {
+      const allMarkers = [
+        { lat: CONFIG.targetLat, lng: CONFIG.targetLng, title: "전북대학교", description: "산책 프로젝트 출발지" },
+        ...EXTRA_MARKERS
+      ];
+      
+      const markersInRange = findMarkersWithinRadius(userLocation, allMarkers, 100);
+      setNearbyMarkers(markersInRange);
+      setShowARButton(markersInRange.length > 0);
+      
+      console.log(`반경 100m 내 마커: ${markersInRange.length}개`, markersInRange);
+    } else {
+      setNearbyMarkers([]);
+      setShowARButton(false);
+    }
+  }, [userLocation]);
 
   // 실시간 위치 추적 시작
   const startLocationTracking = () => {
@@ -73,7 +123,6 @@ const Map3D = () => {
         setLocationAccuracy(accuracy);
         setLastUpdateTime(new Date().toLocaleTimeString());
 
-        // 지도가 로드된 후에만 중심 이동 (처음에만)
         if (map.current && map.current.isStyleLoaded() && !watchId.current) {
           map.current.easeTo({
             center: userCoords,
@@ -178,7 +227,6 @@ const Map3D = () => {
       "bottom-right"
     );
 
-    // GeolocateControl 추가 및 참조 저장
     geolocateControl.current = new mapboxgl.GeolocateControl({
       positionOptions: { 
         enableHighAccuracy: true,
@@ -192,14 +240,12 @@ const Map3D = () => {
 
     map.current.addControl(geolocateControl.current, "bottom-right");
 
-    // 위치 찾기 성공 시 이벤트 리스너
     geolocateControl.current.on('geolocate', (e) => {
       const userCoords = [e.coords.longitude, e.coords.latitude];
       setUserLocation(userCoords);
       setLocationAccuracy(e.coords.accuracy);
       setLastUpdateTime(new Date().toLocaleTimeString());
       
-      // 지도 중심을 내 위치로 이동
       map.current.easeTo({
         center: userCoords,
         zoom: 16,
@@ -209,7 +255,6 @@ const Map3D = () => {
       console.log("내 위치:", userCoords);
     });
 
-    // 위치 찾기 오류 시 이벤트 리스너
     geolocateControl.current.on('error', (e) => {
       console.warn('위치를 찾을 수 없습니다:', e);
     });
@@ -218,16 +263,13 @@ const Map3D = () => {
       const startMarker = addRouteMarker(startPoint, "start");
       setRouteMarkers([startMarker]);
 
-      // 지도 로드 완료 후 자동으로 내 위치 찾기 시작
       setTimeout(() => {
         geolocateControl.current.trigger();
-        // 실시간 위치 추적도 시작
         startLocationTracking();
       }, 1000);
     });
 
     return () => {
-      // 컴포넌트 언마운트 시 실시간 추적 중지
       if (watchId.current) {
         navigator.geolocation.clearWatch(watchId.current);
       }
@@ -242,7 +284,7 @@ const Map3D = () => {
     };
   }, []);
 
-  // 내 위치 직접 가져오기 (추가적인 방법)
+  // 내 위치 직접 가져오기
   useEffect(() => {
     if (!navigator.geolocation) {
       console.warn('이 브라우저는 위치 서비스를 지원하지 않습니다.');
@@ -723,9 +765,22 @@ const Map3D = () => {
                 <strong>업데이트:</strong> {lastUpdateTime}
               </div>
             )}
+            <div style={{ 
+              marginTop: "8px", 
+              padding: "5px 8px", 
+              borderRadius: "5px",
+              backgroundColor: nearbyMarkers.length > 0 ? "rgba(76, 175, 80, 0.2)" : "rgba(244, 67, 54, 0.2)",
+              border: `1px solid ${nearbyMarkers.length > 0 ? "#4CAF50" : "#F44336"}`
+            }}>
+              <strong>100m 내 마커:</strong> {nearbyMarkers.length}개
+              {nearbyMarkers.length > 0 && (
+                <div style={{ fontSize: "10px", marginTop: "2px" }}>
+                  🎯 AR 기능 활성화됨
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* 실시간 추적 제어 버튼들 */}
           <div style={{ 
             marginTop: "10px", 
             display: "flex", 
@@ -796,42 +851,45 @@ const Map3D = () => {
         </button>
       )}
 
-      {/* AR 버튼 */}
-      <button
-        onClick={handleARButtonClick}
-        style={{
-          position: "absolute",
-          top: "20px",
-          right: "20px",
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          color: "white",
-          border: "none",
-          borderRadius: "50px",
-          padding: "12px 20px",
-          fontSize: "14px",
-          fontWeight: "bold",
-          cursor: "pointer",
-          boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
-          zIndex: 1000,
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          transition: "all 0.3s ease",
-          minWidth: "120px",
-          justifyContent: "center"
-        }}
-        onMouseEnter={(e) => {
-          e.target.style.transform = "translateY(-2px)";
-          e.target.style.boxShadow = "0 6px 20px rgba(0,0,0,0.3)";
-        }}
-        onMouseLeave={(e) => {
-          e.target.style.transform = "translateY(0)";
-          e.target.style.boxShadow = "0 4px 15px rgba(0,0,0,0.2)";
-        }}
-      >
-        <span style={{ fontSize: "16px" }}>📷</span>
-        <span>AR 카메라</span>
-      </button>
+      {/* 조건부 AR 버튼 - 반경 100m 내에 마커가 있을 때만 표시 */}
+      {showARButton && (
+        <button
+          onClick={handleARButtonClick}
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            color: "white",
+            border: "none",
+            borderRadius: "50px",
+            padding: "12px 20px",
+            fontSize: "14px",
+            fontWeight: "bold",
+            cursor: "pointer",
+            boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            transition: "all 0.3s ease",
+            minWidth: "120px",
+            justifyContent: "center",
+            animation: "arButtonPulse 2s infinite"
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.transform = "translateY(-2px)";
+            e.target.style.boxShadow = "0 6px 20px rgba(0,0,0,0.3)";
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.transform = "translateY(0)";
+            e.target.style.boxShadow = "0 4px 15px rgba(0,0,0,0.2)";
+          }}
+        >
+          <span style={{ fontSize: "16px" }}>📷</span>
+          <span>AR 카메라</span>
+        </button>
+      )}
 
       {/* SimpleAROverlay */}
       <SimpleAROverlay
@@ -846,6 +904,11 @@ const Map3D = () => {
           0% { opacity: 1; }
           50% { opacity: 0.5; }
           100% { opacity: 1; }
+        }
+        @keyframes arButtonPulse {
+          0% { box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+          50% { box-shadow: 0 4px 25px rgba(102, 126, 234, 0.4); }
+          100% { box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         }
       `}</style>
     </div>
