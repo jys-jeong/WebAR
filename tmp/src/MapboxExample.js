@@ -140,7 +140,7 @@ const Map3D = () => {
   const watchId = useRef(null);
   const hasCenteredOnUser = useRef(false);
   const isInitialized = useRef(false);
-
+  const isInit = useRef(false);
   // State
   const [destinationPoint, setDestinationPoint] = useState(null);
   const [isRouting, setIsRouting] = useState(false);
@@ -150,7 +150,8 @@ const Map3D = () => {
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
   const [nearbyMarkers, setNearbyMarkers] = useState([]);
   const [showARButton, setShowARButton] = useState(false);
-
+  const [closestMarker, setClosestMarker] = useState(null);
+  const [closestDistance, setClosestDistance] = useState(null);
   // AR 관련 state
   const [isARActive, setIsARActive] = useState(false);
   const [selectedMarkerData, setSelectedMarkerData] = useState(null);
@@ -173,7 +174,36 @@ const Map3D = () => {
     setDebugInfo((prev) => [logEntry, ...prev.slice(0, 9)]); // 최근 10개만 유지
     console.log(`[${timestamp}] ${message}`);
   };
-
+  useEffect(() => {
+    if (!userLocation) {
+      setClosestMarker(null);
+      setShowARButton(false);
+      return;
+    }
+    let minDist = Infinity;
+    let nearest = null;
+    EXTRA_MARKERS.forEach((m) => {
+      const d = calculateDistance(
+        userLocation[1],
+        userLocation[0],
+        m.lat,
+        m.lng
+      );
+      if (d < minDist) {
+        minDist = d;
+        nearest = m;
+      }
+    });
+    if (nearest && minDist <= 100) {
+      setClosestMarker(nearest);
+      setClosestDistance(Math.round(minDist));
+      setShowARButton(true);
+    } else {
+      setClosestMarker(null);
+      setClosestDistance(null);
+      setShowARButton(false);
+    }
+  }, [userLocation]);
   // 위치 상태 체크 함수 (모바일용)
   const checkLocationStatus = () => {
     mobileLog("=== 위치 정보 상태 체크 ===", "info");
@@ -383,7 +413,21 @@ const Map3D = () => {
       mobileLog(`소스 제거 중 오류 (무시됨): ${error.message}`, "warning");
     }
   };
-
+  const initializeMap = (center) => {
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: "mapbox://styles/mapbox/streets-v12",
+      center,
+      zoom: 15,
+      pitch: 60,
+      bearing: -17.6,
+      antialias: true,
+    });
+    // NavigationControl, GeolocateControl, 레이어, 마커 렌더링 등 추가 구현
+    map.current.on("move", () => {
+      // 필요 시 마커 업데이트 로직
+    });
+  };
   // 지도 초기화
   useEffect(() => {
     if (isInitialized.current || map.current) return;
@@ -750,37 +794,40 @@ const Map3D = () => {
       }
     }
   };
-
+  useEffect(() => {
+    if (isInit.current) return;
+    isInit.current = true;
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords = [pos.coords.longitude, pos.coords.latitude];
+          setUserLocation(coords);
+          initializeMap(coords);
+        },
+        () => {
+          initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
+        },
+        { enableHighAccuracy: true }
+      );
+    } else {
+      initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
+    }
+    return () => {
+      if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
+      map.current?.remove();
+    };
+  }, []);
   // AR 버튼 클릭 핸들러
   const handleARButtonClick = () => {
-    if (destinationPoint) {
-      const markerIndex = EXTRA_MARKERS.findIndex(
-        (marker) =>
-          Math.abs(marker.lng - destinationPoint[0]) < 0.000001 &&
-          Math.abs(marker.lat - destinationPoint[1]) < 0.000001
-      );
-
-      const markerInfo = EXTRA_MARKERS[markerIndex] || {};
-
-      setSelectedMarkerData({
-        coords: destinationPoint,
-        title: markerInfo.title || "선택된 지점",
-        description: "이 지점의 이미지를 AR로 확인해보세요!",
-        imageUrl: CONFIG.markerImageUrl,
-        id: `spot_${markerIndex}`,
-      });
-    } else {
-      setSelectedMarkerData({
-        coords: userLocation || startPoint,
-        title: "AR 이미지 뷰어",
-        description: "카메라 위에 이미지를 오버레이합니다!",
-        imageUrl: CONFIG.markerImageUrl,
-        id: "main",
-      });
-    }
-
+    if (!closestMarker) return;
+    setSelectedMarkerData({
+      coords: [closestMarker.lng, closestMarker.lat],
+      title: closestMarker.title,
+      description: closestMarker.description,
+      imageUrl: CONFIG.markerImageUrl,
+      id: closestMarker.title,
+    });
     setIsARActive(true);
-    mobileLog("AR 오버레이 활성화됨", "info");
   };
 
   // AR 종료 함수
@@ -1000,7 +1047,46 @@ const Map3D = () => {
         isRouting={isRouting}
         destinationPoint={destinationPoint}
       />
+      {/* 최근접 마커 정보 표시 */}
+      {closestMarker && (
+        <div
+          style={{
+            position: "absolute",
+            top: 20,
+            left: 20,
+            background: "white",
+            padding: "8px 12px",
+            borderRadius: "5px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            zIndex: 1000,
+          }}
+        >
+          <strong>가장 가까운 장소:</strong> {closestMarker.title} (
+          {closestDistance}m)
+        </div>
+      )}
 
+      {/* AR 버튼 */}
+      {showARButton && (
+        <button
+          onClick={handleARButtonClick}
+          style={{
+            position: "absolute",
+            top: 20,
+            right: 20,
+            background: "linear-gradient(135deg,#667eea 0%,#764ba2 100%)",
+            color: "white",
+            border: "none",
+            borderRadius: "50px",
+            padding: "12px 20px",
+            fontSize: "14px",
+            cursor: "pointer",
+            zIndex: 1000,
+          }}
+        >
+          📷 AR 카메라
+        </button>
+      )}
       {/* 모바일 디버깅 패널 토글 버튼 */}
       <button
         onClick={() => setShowDebugPanel(!showDebugPanel)}
