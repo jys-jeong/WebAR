@@ -150,7 +150,7 @@ const Map3D = () => {
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
   const [nearbyMarkers, setNearbyMarkers] = useState([]);
   const [showARButton, setShowARButton] = useState(false);
-
+  const [excludedMarkers, setExcludedMarkers] = useState([]);
   // AR 관련 state
   const [isARActive, setIsARActive] = useState(false);
   const [selectedMarkerData, setSelectedMarkerData] = useState(null);
@@ -160,7 +160,7 @@ const Map3D = () => {
   const [showDebugPanel, setShowDebugPanel] = useState(false);
 
   const startPoint = [CONFIG.targetLng, CONFIG.targetLat];
-
+  
   // 모바일용 로그 함수
   const mobileLog = (message, type = "info") => {
     const timestamp = new Date().toLocaleTimeString();
@@ -205,20 +205,11 @@ const Map3D = () => {
   useEffect(() => {
     if (userLocation) {
       const allMarkers = [
-        {
-          lat: CONFIG.targetLat,
-          lng: CONFIG.targetLng,
-          title: "전북대학교",
-          description: "산책 프로젝트 출발지",
-        },
         ...EXTRA_MARKERS,
       ];
 
-      const markersInRange = findMarkersWithinRadius(
-        userLocation,
-        allMarkers,
-        100
-      );
+      const available = allMarkers.filter(m => !excludedMarkers.includes(m.title));
+      const markersInRange = findMarkersWithinRadius(userLocation, available, 100);
       setNearbyMarkers(markersInRange);
       setShowARButton(markersInRange.length > 0);
 
@@ -755,7 +746,10 @@ const Map3D = () => {
           Math.abs(marker.lng - destinationPoint[0]) < 0.000001 &&
           Math.abs(marker.lat - destinationPoint[1]) < 0.000001
       );
-
+      const title = EXTRA_MARKERS[markerIndex]?.title;
+      if (title && !excludedMarkers.includes(title)) {
+        setExcludedMarkers(prev => [...prev, title]);
+      }
       const markerInfo = EXTRA_MARKERS[markerIndex] || {};
 
       setSelectedMarkerData({

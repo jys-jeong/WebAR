@@ -141,28 +141,6 @@ export const DirectionsControl = ({
           </button>
         )}
       </div>
-
-      {excludedMarkers.length > 0 && (
-        <div
-          style={{
-            marginTop: 10,
-            fontSize: 11,
-            color: "#999",
-            background: "#f9f9f9",
-            padding: "6px",
-            borderRadius: 4,
-          }}
-        >
-          <div style={{ marginBottom: 4, fontWeight: "bold", fontSize: 12 }}>
-            ❌ 제외된 마커
-          </div>
-          <ul style={{ paddingLeft: 16, margin: 0 }}>
-            {excludedMarkers.map((title, idx) => (
-              <li key={idx}>{title}</li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 };
