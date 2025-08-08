@@ -33,17 +33,77 @@ const Map3D = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const domMarkerMap = useRef(new Map());
+  const geolocateControl = useRef(null);
+  const watchId = useRef(null); // 실시간 위치 추적 ID
 
   // State
   const [destinationPoint, setDestinationPoint] = useState(null);
   const [isRouting, setIsRouting] = useState(false);
   const [routeMarkers, setRouteMarkers] = useState([]);
+  const [userLocation, setUserLocation] = useState(null);
+  const [isLocationTracking, setIsLocationTracking] = useState(false); // 실시간 추적 상태
+  const [locationAccuracy, setLocationAccuracy] = useState(null); // 위치 정확도
+  const [lastUpdateTime, setLastUpdateTime] = useState(null); // 마지막 업데이트 시간
 
   // AR 관련 state
   const [isARActive, setIsARActive] = useState(false);
   const [selectedMarkerData, setSelectedMarkerData] = useState(null);
 
   const startPoint = [CONFIG.targetLng, CONFIG.targetLat];
+
+  // 실시간 위치 추적 시작
+  const startLocationTracking = () => {
+    if (!navigator.geolocation) {
+      console.warn('이 브라우저는 위치 서비스를 지원하지 않습니다.');
+      return;
+    }
+
+    if (watchId.current) {
+      navigator.geolocation.clearWatch(watchId.current);
+    }
+
+    setIsLocationTracking(true);
+
+    watchId.current = navigator.geolocation.watchPosition(
+      (position) => {
+        const { longitude, latitude, accuracy } = position.coords;
+        const userCoords = [longitude, latitude];
+        
+        setUserLocation(userCoords);
+        setLocationAccuracy(accuracy);
+        setLastUpdateTime(new Date().toLocaleTimeString());
+
+        // 지도가 로드된 후에만 중심 이동 (처음에만)
+        if (map.current && map.current.isStyleLoaded() && !watchId.current) {
+          map.current.easeTo({
+            center: userCoords,
+            zoom: 16,
+            duration: 1000
+          });
+        }
+
+        console.log("실시간 위치 업데이트:", userCoords, "정확도:", accuracy, "m");
+      },
+      (error) => {
+        console.warn('실시간 위치 추적 오류:', error.message);
+        setIsLocationTracking(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 1000
+      }
+    );
+  };
+
+  // 실시간 위치 추적 중지
+  const stopLocationTracking = () => {
+    if (watchId.current) {
+      navigator.geolocation.clearWatch(watchId.current);
+      watchId.current = null;
+    }
+    setIsLocationTracking(false);
+  };
 
   // GeoJSON 생성 함수
   const createGeojson = (excludeDestination = null) => {
@@ -118,22 +178,60 @@ const Map3D = () => {
       "bottom-right"
     );
 
-    map.current.addControl(
-      new mapboxgl.GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
-        trackUserLocation: true,
-        showUserHeading: true,
-        showAccuracyCircle: true,
-      }),
-      "bottom-right"
-    );
+    // GeolocateControl 추가 및 참조 저장
+    geolocateControl.current = new mapboxgl.GeolocateControl({
+      positionOptions: { 
+        enableHighAccuracy: true,
+        timeout: 6000,
+        maximumAge: 0
+      },
+      trackUserLocation: true,
+      showUserHeading: true,
+      showAccuracyCircle: true,
+    });
+
+    map.current.addControl(geolocateControl.current, "bottom-right");
+
+    // 위치 찾기 성공 시 이벤트 리스너
+    geolocateControl.current.on('geolocate', (e) => {
+      const userCoords = [e.coords.longitude, e.coords.latitude];
+      setUserLocation(userCoords);
+      setLocationAccuracy(e.coords.accuracy);
+      setLastUpdateTime(new Date().toLocaleTimeString());
+      
+      // 지도 중심을 내 위치로 이동
+      map.current.easeTo({
+        center: userCoords,
+        zoom: 16,
+        duration: 2000
+      });
+
+      console.log("내 위치:", userCoords);
+    });
+
+    // 위치 찾기 오류 시 이벤트 리스너
+    geolocateControl.current.on('error', (e) => {
+      console.warn('위치를 찾을 수 없습니다:', e);
+    });
 
     map.current.on("load", () => {
       const startMarker = addRouteMarker(startPoint, "start");
       setRouteMarkers([startMarker]);
+
+      // 지도 로드 완료 후 자동으로 내 위치 찾기 시작
+      setTimeout(() => {
+        geolocateControl.current.trigger();
+        // 실시간 위치 추적도 시작
+        startLocationTracking();
+      }, 1000);
     });
 
     return () => {
+      // 컴포넌트 언마운트 시 실시간 추적 중지
+      if (watchId.current) {
+        navigator.geolocation.clearWatch(watchId.current);
+      }
+      
       domMarkerMap.current.forEach((marker) => marker.remove());
       domMarkerMap.current.clear();
       
@@ -142,6 +240,43 @@ const Map3D = () => {
         map.current = null;
       }
     };
+  }, []);
+
+  // 내 위치 직접 가져오기 (추가적인 방법)
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      console.warn('이 브라우저는 위치 서비스를 지원하지 않습니다.');
+      return;
+    }
+
+    const getCurrentLocation = () => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const userCoords = [position.coords.longitude, position.coords.latitude];
+          setUserLocation(userCoords);
+          setLocationAccuracy(position.coords.accuracy);
+          setLastUpdateTime(new Date().toLocaleTimeString());
+          
+          if (map.current && map.current.isStyleLoaded()) {
+            map.current.easeTo({
+              center: userCoords,
+              zoom: 16,
+              duration: 2000
+            });
+          }
+        },
+        (error) => {
+          console.warn('위치 접근이 거부되었거나 오류가 발생했습니다:', error.message);
+        },
+        { 
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    };
+
+    getCurrentLocation();
   }, []);
 
   // 클러스터 데이터 업데이트
@@ -222,7 +357,7 @@ const Map3D = () => {
         const duration = Math.round(routeData.duration / 60);
 
         alert(
-          `전북대 → 목적지 경로\n거리: ${distance}km\n예상 시간: ${duration}분\n경로 포인트: ${filteredRoute.length}개`
+          `경로 안내\n거리: ${distance}km\n예상 시간: ${duration}분\n경로 포인트: ${filteredRoute.length}개`
         );
       } else {
         alert("경로를 찾을 수 없습니다.");
@@ -291,7 +426,9 @@ const Map3D = () => {
     setRouteMarkers((prev) => [prev[0], endMarker]);
 
     updateClusterData(coords);
-    getRoute(startPoint, coords);
+    
+    const startLocation = userLocation || startPoint;
+    getRoute(startLocation, coords);
   };
 
   const handlePinMarkerClick = (coords, feature) => {
@@ -318,7 +455,7 @@ const Map3D = () => {
       });
     } else {
       setSelectedMarkerData({
-        coords: startPoint,
+        coords: userLocation || startPoint,
         title: "AR 이미지 뷰어",
         description: "카메라 위에 이미지를 오버레이합니다!",
         imageUrl: CONFIG.markerImageUrl,
@@ -530,6 +667,135 @@ const Map3D = () => {
         destinationPoint={destinationPoint}
       />
 
+      {/* 실시간 위치 정보 패널 */}
+      {userLocation && (
+        <div
+          style={{
+            position: "absolute",
+            top: "20px",
+            left: "20px",
+            background: "rgba(0, 0, 0, 0.8)",
+            color: "white",
+            padding: "15px",
+            borderRadius: "10px",
+            fontFamily: "monospace",
+            fontSize: "12px",
+            minWidth: "280px",
+            boxShadow: "0 4px 15px rgba(0,0,0,0.3)",
+            zIndex: 1000,
+            backdropFilter: "blur(5px)",
+          }}
+        >
+          <div style={{ 
+            fontSize: "14px", 
+            fontWeight: "bold", 
+            marginBottom: "10px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px"
+          }}>
+            <span style={{ fontSize: "16px" }}>📍</span>
+            실시간 위치 정보
+            <div style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              backgroundColor: isLocationTracking ? "#4CAF50" : "#F44336",
+              marginLeft: "auto",
+              animation: isLocationTracking ? "pulse 2s infinite" : "none"
+            }} />
+          </div>
+          
+          <div style={{ lineHeight: "1.6" }}>
+            <div>
+              <strong>경도:</strong> {userLocation[0].toFixed(8)}
+            </div>
+            <div>
+              <strong>위도:</strong> {userLocation[1].toFixed(8)}
+            </div>
+            {locationAccuracy && (
+              <div>
+                <strong>정확도:</strong> ±{Math.round(locationAccuracy)}m
+              </div>
+            )}
+            {lastUpdateTime && (
+              <div>
+                <strong>업데이트:</strong> {lastUpdateTime}
+              </div>
+            )}
+          </div>
+
+          {/* 실시간 추적 제어 버튼들 */}
+          <div style={{ 
+            marginTop: "10px", 
+            display: "flex", 
+            gap: "5px" 
+          }}>
+            <button
+              onClick={isLocationTracking ? stopLocationTracking : startLocationTracking}
+              style={{
+                background: isLocationTracking ? "#F44336" : "#4CAF50",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "5px 10px",
+                fontSize: "10px",
+                cursor: "pointer",
+                flex: 1
+              }}
+            >
+              {isLocationTracking ? "추적 중지" : "실시간 추적"}
+            </button>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`${userLocation[0]}, ${userLocation[1]}`);
+                alert("좌표가 복사되었습니다!");
+              }}
+              style={{
+                background: "#2196F3",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "5px 10px",
+                fontSize: "10px",
+                cursor: "pointer",
+              }}
+            >
+              복사
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 내 위치 버튼 */}
+      {userLocation && (
+        <button
+          onClick={() => {
+            map.current.easeTo({
+              center: userLocation,
+              zoom: 16,
+              duration: 1000
+            });
+          }}
+          style={{
+            position: "absolute",
+            top: "140px",
+            right: "20px",
+            background: "#007cbf",
+            color: "white",
+            border: "none",
+            borderRadius: "50px",
+            padding: "10px",
+            fontSize: "16px",
+            cursor: "pointer",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+            zIndex: 1000,
+          }}
+        >
+          📍
+        </button>
+      )}
+
       {/* AR 버튼 */}
       <button
         onClick={handleARButtonClick}
@@ -573,6 +839,15 @@ const Map3D = () => {
         markerData={selectedMarkerData}
         onClose={handleCloseAR}
       />
+
+      {/* CSS 애니메이션 */}
+      <style jsx>{`
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.5; }
+          100% { opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 };
