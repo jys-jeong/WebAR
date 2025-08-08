@@ -294,6 +294,7 @@ const Map3D = () => {
         trackUserLocation: true,
         showUserHeading: true,
         showAccuracyCircle: true,
+        showUserLocation: true,
       });
 
       map.current.addControl(geolocateControl.current, "bottom-right");
