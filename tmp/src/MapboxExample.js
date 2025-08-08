@@ -100,23 +100,35 @@ const coordKey = (coord) => `${coord[0].toFixed(8)},${coord[1].toFixed(8)}`;
 
 // Haversine 공식으로 두 좌표 간 거리 계산 (미터 단위)
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371000;
+  const R = 6371000; // 지구 반지름 (미터)
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
   const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
   const a =
-    Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // 미터 단위 거리
 };
 
 // 반경 내 마커 찾기 함수
-const findMarkersWithinRadius = (userLocation, markers, radius = 100) => {
+const findMarkersWithinRadius = (userLocation, markers, radiusMeters = 100) => {
   if (!userLocation) return [];
-  const [lng, lat] = userLocation;
-  return markers.filter(
-    (m) => calculateDistance(lat, lng, m.lat, m.lng) <= radius
-  );
+
+  const [userLng, userLat] = userLocation;
+
+  return markers.filter((marker) => {
+    const distance = calculateDistance(
+      userLat,
+      userLng,
+      marker.lat,
+      marker.lng
+    );
+    return distance <= radiusMeters;
+  });
 };
 
 const Map3D = () => {
@@ -138,7 +150,7 @@ const Map3D = () => {
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
   const [nearbyMarkers, setNearbyMarkers] = useState([]);
   const [showARButton, setShowARButton] = useState(false);
-  const [excludedMarkers, setExcludedMarkers] = useState([]);
+
   // AR 관련 state
   const [isARActive, setIsARActive] = useState(false);
   const [selectedMarkerData, setSelectedMarkerData] = useState(null);
@@ -188,30 +200,17 @@ const Map3D = () => {
       });
     }
   };
-  useEffect(() => {
-    if (!userLocation) {
-      setNearbyMarkers([]);
-      setShowARButton(false);
-      return;
-    }
-    const avail = EXTRA_MARKERS.filter(
-      (m) => !excludedMarkers.includes(m.title)
-    );
-    const inRange = findMarkersWithinRadius(userLocation, avail, 100);
-    setNearbyMarkers(inRange);
-    setShowARButton(inRange.length > 0);
-  }, [userLocation, excludedMarkers]);
+
   // 반경 내 마커 체크 및 AR 버튼 표시 조건 업데이트
   useEffect(() => {
     if (userLocation) {
-      const allMarkers = [...EXTRA_MARKERS];
+      const allMarkers = [
+        ...EXTRA_MARKERS,
+      ];
 
-      const available = allMarkers.filter(
-        (m) => !excludedMarkers.includes(m.title)
-      );
       const markersInRange = findMarkersWithinRadius(
         userLocation,
-        available,
+        allMarkers,
         100
       );
       setNearbyMarkers(markersInRange);
@@ -634,6 +633,18 @@ const Map3D = () => {
           currentLocation &&
           (Math.abs(currentLocation[0] - fixedStartLocation[0]) > 0.00001 ||
             Math.abs(currentLocation[1] - fixedStartLocation[1]) > 0.00001);
+
+        alert(
+          `🚶‍♂️ ${
+            destination?.title || "목적지"
+          }로 가는 경로\n📏 거리: ${distance}km\n⏰ 예상 시간: ${duration}분\n📍 경로 포인트: ${
+            filteredRoute.length
+          }개${
+            locationChanged
+              ? "\n\n⚠️ 마커 클릭 시점의 위치를 기준으로 계산된 경로입니다."
+              : ""
+          }`
+        );
       } else {
         mobileLog("❌ 경로를 찾을 수 없음", "error");
         alert("경로를 찾을 수 없습니다.");
@@ -744,17 +755,34 @@ const Map3D = () => {
 
   // AR 버튼 클릭 핸들러
   const handleARButtonClick = () => {
-    if (!nearbyMarkers.length) return;
-    const marker = nearbyMarkers[0]; // closest
-    setExcludedMarkers((prev) => [...prev, marker.title]);
-    setSelectedMarkerData({
-      coords: [marker.lng, marker.lat],
-      title: marker.title,
-      description: marker.description,
-      imageUrl: CONFIG.markerImageUrl,
-      id: marker.title,
-    });
+    if (destinationPoint) {
+      const markerIndex = EXTRA_MARKERS.findIndex(
+        (marker) =>
+          Math.abs(marker.lng - destinationPoint[0]) < 0.000001 &&
+          Math.abs(marker.lat - destinationPoint[1]) < 0.000001
+      );
+
+      const markerInfo = EXTRA_MARKERS[markerIndex] || {};
+
+      setSelectedMarkerData({
+        coords: destinationPoint,
+        title: markerInfo.title || "선택된 지점",
+        description: "이 지점의 이미지를 AR로 확인해보세요!",
+        imageUrl: CONFIG.markerImageUrl,
+        id: `spot_${markerIndex}`,
+      });
+    } else {
+      setSelectedMarkerData({
+        coords: userLocation || startPoint,
+        title: "AR 이미지 뷰어",
+        description: "카메라 위에 이미지를 오버레이합니다!",
+        imageUrl: CONFIG.markerImageUrl,
+        id: "main",
+      });
+    }
+
     setIsARActive(true);
+    mobileLog("AR 오버레이 활성화됨", "info");
   };
 
   // AR 종료 함수
@@ -951,25 +979,477 @@ const Map3D = () => {
   };
 
   return (
-    <div style={{ width: '100%', height: '100vh', position: 'relative' }}>
-      <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
-      <DirectionsControl
-        onClearRoute={() => {/* clear route logic */}}
-        isRouting={isRouting}
-        userLocation={userLocation}
-        markers={EXTRA_MARKERS.filter(m => !excludedMarkers.includes(m.title))}
-        onARButtonClick={handleARButtonClick}
+    <div
+      className="map-container"
+      style={{
+        width: "100%",
+        height: "100vh",
+        position: "relative",
+      }}
+    >
+      <div
+        ref={mapContainer}
+        className="mapbox-container"
+        style={{
+          width: "100%",
+          height: "100%",
+        }}
       />
-      {showARButton && (
-        <button onClick={handleARButtonClick} /* style props */>
-          📷 AR 카메라
+
+      {/* 길찾기 컨트롤 */}
+      <DirectionsControl
+        onClearRoute={clearRoute}
+        isRouting={isRouting}
+        destinationPoint={destinationPoint}
+      />
+
+      {/* 모바일 디버깅 패널 토글 버튼 */}
+      <button
+        onClick={() => setShowDebugPanel(!showDebugPanel)}
+        style={{
+          position: "absolute",
+          top: "10px",
+          left: "10px",
+          background: "#FF5722",
+          color: "white",
+          border: "none",
+          borderRadius: "50%",
+          width: "50px",
+          height: "50px",
+          fontSize: "20px",
+          cursor: "pointer",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+          zIndex: 1001,
+        }}
+      >
+        🐛
+      </button>
+
+      {/* 모바일 디버깅 패널 */}
+      {showDebugPanel && (
+        <div
+          style={{
+            position: "absolute",
+            top: "70px",
+            left: "10px",
+            right: "10px",
+            background: "rgba(0, 0, 0, 0.95)",
+            color: "white",
+            padding: "15px",
+            borderRadius: "10px",
+            fontFamily: "monospace",
+            fontSize: "11px",
+            maxHeight: "350px",
+            overflowY: "auto",
+            zIndex: 1000,
+            backdropFilter: "blur(5px)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "14px",
+              fontWeight: "bold",
+              marginBottom: "10px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>🐛 디버깅 정보</span>
+            <button
+              onClick={() => setDebugInfo([])}
+              style={{
+                background: "#666",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "5px 10px",
+                fontSize: "10px",
+                cursor: "pointer",
+              }}
+            >
+              로그 지우기
+            </button>
+          </div>
+
+          {/* 현재 상태 요약 */}
+          <div
+            style={{
+              marginBottom: "15px",
+              padding: "10px",
+              background: "rgba(255,255,255,0.1)",
+              borderRadius: "5px",
+            }}
+          >
+            <div>
+              <strong>위치상태:</strong> {userLocation ? "✅ 있음" : "❌ 없음"}
+            </div>
+            <div>
+              <strong>추적상태:</strong>{" "}
+              {isLocationTracking ? "✅ 활성" : "❌ 비활성"}
+            </div>
+            <div>
+              <strong>정확도:</strong>{" "}
+              {locationAccuracy
+                ? `±${Math.round(locationAccuracy)}m`
+                : "알수없음"}
+            </div>
+            {userLocation && (
+              <div>
+                <strong>좌표:</strong> [{userLocation[0].toFixed(6)},{" "}
+                {userLocation[1].toFixed(6)}]
+              </div>
+            )}
+            <div>
+              <strong>근처마커:</strong> {nearbyMarkers.length}개
+            </div>
+            <div>
+              <strong>AR버튼:</strong> {showARButton ? "✅ 표시" : "❌ 숨김"}
+            </div>
+          </div>
+
+          {/* 로그 목록 */}
+          <div style={{ marginBottom: "15px" }}>
+            {debugInfo.length === 0 ? (
+              <div style={{ textAlign: "center", color: "#999" }}>
+                로그가 없습니다
+              </div>
+            ) : (
+              debugInfo.map((log, index) => (
+                <div
+                  key={index}
+                  style={{
+                    marginBottom: "5px",
+                    padding: "5px",
+                    borderRadius: "3px",
+                    background:
+                      log.type === "error"
+                        ? "rgba(244, 67, 54, 0.2)"
+                        : log.type === "success"
+                        ? "rgba(76, 175, 80, 0.2)"
+                        : log.type === "warning"
+                        ? "rgba(255, 152, 0, 0.2)"
+                        : "rgba(33, 150, 243, 0.2)",
+                    fontSize: "10px",
+                    lineHeight: "1.3",
+                  }}
+                >
+                  <span style={{ color: "#ccc" }}>[{log.time}]</span>{" "}
+                  {log.message}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* 디버깅 버튼들 */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "8px",
+            }}
+          >
+            <button
+              onClick={checkLocationStatus}
+              style={{
+                background: "#FF9800",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "8px 12px",
+                fontSize: "11px",
+                cursor: "pointer",
+              }}
+            >
+              상태확인
+            </button>
+
+            <button
+              onClick={() => {
+                if (navigator.geolocation) {
+                  mobileLog("강제 위치 요청 시작...", "info");
+                  navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                      const userCoords = [
+                        position.coords.longitude,
+                        position.coords.latitude,
+                      ];
+                      setUserLocation(userCoords);
+                      setLocationAccuracy(position.coords.accuracy);
+                      setLastUpdateTime(new Date().toLocaleTimeString());
+                      mobileLog("✅ 강제 위치 요청 성공!", "success");
+                    },
+                    (error) => {
+                      mobileLog(
+                        `❌ 강제 위치 요청 실패: ${error.message}`,
+                        "error"
+                      );
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                  );
+                }
+              }}
+              style={{
+                background: "#4CAF50",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "8px 12px",
+                fontSize: "11px",
+                cursor: "pointer",
+              }}
+            >
+              위치 강제요청
+            </button>
+
+            <button
+              onClick={
+                isLocationTracking
+                  ? stopLocationTracking
+                  : startLocationTracking
+              }
+              style={{
+                background: isLocationTracking ? "#F44336" : "#2196F3",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "8px 12px",
+                fontSize: "11px",
+                cursor: "pointer",
+              }}
+            >
+              {isLocationTracking ? "추적중지" : "추적시작"}
+            </button>
+
+            <button
+              onClick={() => {
+                if (userLocation) {
+                  navigator.clipboard.writeText(
+                    `${userLocation[0]}, ${userLocation[1]}`
+                  );
+                  mobileLog("좌표가 클립보드에 복사됨", "info");
+                } else {
+                  mobileLog("복사할 위치 정보가 없음", "warning");
+                }
+              }}
+              style={{
+                background: "#9C27B0",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "8px 12px",
+                fontSize: "11px",
+                cursor: "pointer",
+              }}
+            >
+              좌표복사
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 실시간 위치 정보 패널 - 위치가 있을 때만 표시 */}
+      {userLocation && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "120px",
+            left: "20px",
+            right: "20px",
+            background: "rgba(0, 0, 0, 0.8)",
+            color: "white",
+            padding: "15px",
+            borderRadius: "10px",
+            fontFamily: "monospace",
+            fontSize: "12px",
+            boxShadow: "0 4px 15px rgba(0,0,0,0.3)",
+            zIndex: 1000,
+            backdropFilter: "blur(5px)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "14px",
+              fontWeight: "bold",
+              marginBottom: "10px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <span style={{ fontSize: "16px" }}>📍</span>
+            실시간 위치 정보
+            <div
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: isLocationTracking ? "#4CAF50" : "#F44336",
+                marginLeft: "auto",
+                animation: isLocationTracking ? "pulse 2s infinite" : "none",
+              }}
+            />
+          </div>
+
+          <div style={{ lineHeight: "1.6" }}>
+            <div>
+              <strong>경도:</strong> {userLocation[0].toFixed(8)}
+            </div>
+            <div>
+              <strong>위도:</strong> {userLocation[1].toFixed(8)}
+            </div>
+            {locationAccuracy && (
+              <div>
+                <strong>정확도:</strong> ±{Math.round(locationAccuracy)}m
+              </div>
+            )}
+            {lastUpdateTime && (
+              <div>
+                <strong>업데이트:</strong> {lastUpdateTime}
+              </div>
+            )}
+            <div
+              style={{
+                marginTop: "8px",
+                padding: "5px 8px",
+                borderRadius: "5px",
+                backgroundColor:
+                  nearbyMarkers.length > 0
+                    ? "rgba(76, 175, 80, 0.2)"
+                    : "rgba(244, 67, 54, 0.2)",
+                border: `1px solid ${
+                  nearbyMarkers.length > 0 ? "#4CAF50" : "#F44336"
+                }`,
+              }}
+            >
+              <strong>100m 내 마커:</strong> {nearbyMarkers.length}개
+              {nearbyMarkers.length > 0 && (
+                <div style={{ fontSize: "10px", marginTop: "2px" }}>
+                  🎯 AR 기능 활성화됨
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                marginTop: "8px",
+                padding: "5px 8px",
+                borderRadius: "5px",
+                backgroundColor: "rgba(102, 126, 234, 0.2)",
+                border: "1px solid #667eea",
+              }}
+            >
+              <strong>경로 추천:</strong> 마커 클릭
+              <div style={{ fontSize: "10px", marginTop: "2px" }}>
+                🗺️ 마커 클릭 시점 위치 기준
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 내 위치 버튼 */}
+      {userLocation && (
+        <button
+          onClick={() => {
+            map.current.easeTo({
+              center: userLocation,
+              zoom: 16,
+              duration: 1000,
+            });
+            mobileLog("내 위치로 지도 이동", "info");
+          }}
+          style={{
+            position: "absolute",
+            bottom: "70px",
+            right: "20px",
+            background: "#007cbf",
+            color: "white",
+            border: "none",
+            borderRadius: "50%",
+            padding: "15px",
+            fontSize: "18px",
+            cursor: "pointer",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+            zIndex: 1000,
+          }}
+        >
+          📍
         </button>
       )}
+
+      {/* 조건부 AR 버튼 */}
+      {showARButton && (
+        <button
+          onClick={handleARButtonClick}
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            color: "white",
+            border: "none",
+            borderRadius: "50px",
+            padding: "12px 20px",
+            fontSize: "14px",
+            fontWeight: "bold",
+            cursor: "pointer",
+            boxShadow: "0 4px 15px rgba(0,0,0,0.2)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            transition: "all 0.3s ease",
+            minWidth: "120px",
+            justifyContent: "center",
+            animation: "arButtonPulse 2s infinite",
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.transform = "translateY(-2px)";
+            e.target.style.boxShadow = "0 6px 20px rgba(0,0,0,0.3)";
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.transform = "translateY(0)";
+            e.target.style.boxShadow = "0 4px 15px rgba(0,0,0,0.2)";
+          }}
+        >
+          <span style={{ fontSize: "16px" }}>📷</span>
+          <span>AR 카메라</span>
+        </button>
+      )}
+
+      {/* SimpleAROverlay */}
       <SimpleAROverlay
         isActive={isARActive}
         markerData={selectedMarkerData}
-        onClose={() => setIsARActive(false)}
+        onClose={handleCloseAR}
       />
+
+      {/* CSS 애니메이션 */}
+      <style jsx>{`
+        @keyframes pulse {
+          0% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.5;
+          }
+          100% {
+            opacity: 1;
+          }
+        }
+        @keyframes arButtonPulse {
+          0% {
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+          }
+          50% {
+            box-shadow: 0 4px 25px rgba(102, 126, 234, 0.4);
+          }
+          100% {
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+          }
+        }
+      `}</style>
     </div>
   );
 };
