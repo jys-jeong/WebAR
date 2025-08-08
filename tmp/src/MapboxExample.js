@@ -627,11 +627,6 @@ const Map3D = () => {
         const distance = (routeData.distance / 1000).toFixed(1);
         const duration = Math.round(routeData.duration / 60);
 
-        mobileLog(
-          `✅ 고정 위치 기준 경로 계산 성공: ${distance}km, ${duration}분`,
-          "success"
-        );
-
         const destination = EXTRA_MARKERS.find(
           (marker) =>
             Math.abs(marker.lng - end[0]) < 0.000001 &&
@@ -644,18 +639,6 @@ const Map3D = () => {
           currentLocation &&
           (Math.abs(currentLocation[0] - fixedStartLocation[0]) > 0.00001 ||
             Math.abs(currentLocation[1] - fixedStartLocation[1]) > 0.00001);
-
-        alert(
-          `🚶‍♂️ ${
-            destination?.title || "목적지"
-          }로 가는 경로\n📏 거리: ${distance}km\n⏰ 예상 시간: ${duration}분\n📍 경로 포인트: ${
-            filteredRoute.length
-          }개${
-            locationChanged
-              ? "\n\n⚠️ 마커 클릭 시점의 위치를 기준으로 계산된 경로입니다."
-              : ""
-          }`
-        );
       } else {
         mobileLog("❌ 경로를 찾을 수 없음", "error");
         alert("경로를 찾을 수 없습니다.");
@@ -1012,6 +995,8 @@ const Map3D = () => {
         onClearRoute={clearRoute}
         isRouting={isRouting}
         destinationPoint={destinationPoint}
+        userLocation={userLocation}
+        markers={EXTRA_MARKERS}
       />
 
       {/* 모바일 디버깅 패널 토글 버튼 */}
