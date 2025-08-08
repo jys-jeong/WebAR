@@ -831,6 +831,7 @@ const Map3D = () => {
     });
     setIsARActive(true);
     setDisabledMarkerTitle(closestMarker.title);
+    setClosestMarker(null);
   };
 
   // AR 종료 함수
