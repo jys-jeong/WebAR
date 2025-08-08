@@ -71,7 +71,6 @@ const Map3D = () => {
   // State
   const [destinationPoint, setDestinationPoint] = useState(null);
   const [isRouting, setIsRouting] = useState(false);
-  // ✅ routeMarkers 제거 - S, E 마커를 더 이상 사용하지 않음
   const [userLocation, setUserLocation] = useState(null);
   const [isLocationTracking, setIsLocationTracking] = useState(false);
   const [locationAccuracy, setLocationAccuracy] = useState(null);
@@ -83,7 +82,39 @@ const Map3D = () => {
   const [isARActive, setIsARActive] = useState(false);
   const [selectedMarkerData, setSelectedMarkerData] = useState(null);
 
+  // ✅ 모바일 디버깅용 state
+  const [debugInfo, setDebugInfo] = useState([]);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+
   const startPoint = [CONFIG.targetLng, CONFIG.targetLat];
+
+  // ✅ 모바일용 로그 함수
+  const mobileLog = (message, type = 'info') => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = {
+      time: timestamp,
+      message: String(message),
+      type: type
+    };
+    
+    setDebugInfo(prev => [logEntry, ...prev.slice(0, 9)]); // 최근 10개만 유지
+    console.log(`[${timestamp}] ${message}`);
+  };
+
+  // ✅ 위치 상태 체크 함수 (모바일용)
+  const checkLocationStatus = () => {
+    mobileLog("=== 위치 정보 상태 체크 ===", "info");
+    mobileLog(`userLocation: ${userLocation ? `[${userLocation[0].toFixed(6)}, ${userLocation[1].toFixed(6)}]` : 'null'}`, "info");
+    mobileLog(`isLocationTracking: ${isLocationTracking}`, "info");
+    mobileLog(`locationAccuracy: ${locationAccuracy ? Math.round(locationAccuracy) + 'm' : 'null'}`, "info");
+    mobileLog(`navigator.geolocation 지원: ${!!navigator.geolocation}`, "info");
+    
+    if (navigator.permissions) {
+      navigator.permissions.query({name: 'geolocation'}).then((result) => {
+        mobileLog(`위치 권한 상태: ${result.state}`, "info");
+      });
+    }
+  };
 
   // 반경 내 마커 체크 및 AR 버튼 표시 조건 업데이트
   useEffect(() => {
@@ -97,7 +128,7 @@ const Map3D = () => {
       setNearbyMarkers(markersInRange);
       setShowARButton(markersInRange.length > 0);
       
-      console.log(`반경 100m 내 마커: ${markersInRange.length}개`, markersInRange);
+      mobileLog(`반경 100m 내 마커: ${markersInRange.length}개`, "info");
     } else {
       setNearbyMarkers([]);
       setShowARButton(false);
@@ -113,14 +144,16 @@ const Map3D = () => {
         duration: 2000
       });
       hasCenteredOnUser.current = true;
-      console.log("지도가 사용자 위치로 센터링됨:", userCoords);
+      mobileLog(`지도가 사용자 위치로 센터링됨: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`, "success");
     }
   };
 
-  // 실시간 위치 추적 시작
+  // ✅ 실시간 위치 추적 시작 (모바일 로그 추가)
   const startLocationTracking = () => {
+    mobileLog("위치 추적 시작 시도...", "info");
+    
     if (!navigator.geolocation) {
-      console.warn('이 브라우저는 위치 서비스를 지원하지 않습니다.');
+      mobileLog('브라우저가 위치 서비스를 지원하지 않습니다', "error");
       return;
     }
 
@@ -135,25 +168,36 @@ const Map3D = () => {
         const { longitude, latitude, accuracy } = position.coords;
         const userCoords = [longitude, latitude];
         
+        mobileLog(`✅ 위치 업데이트 성공: [${longitude.toFixed(6)}, ${latitude.toFixed(6)}] 정확도: ${Math.round(accuracy)}m`, "success");
+        
         setUserLocation(userCoords);
         setLocationAccuracy(accuracy);
         setLastUpdateTime(new Date().toLocaleTimeString());
 
-        // 최초 한번만 지도 센터링
         if (map.current && map.current.isStyleLoaded()) {
           centerMapToUserLocation(userCoords);
         }
-
-        console.log("실시간 위치 업데이트:", userCoords, "정확도:", accuracy, "m");
       },
       (error) => {
-        console.warn('실시간 위치 추적 오류:', error.message);
+        let errorMessage = "위치 서비스 오류";
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = "❌ 위치 접근 권한 거부됨";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = "❌ 위치 정보 사용 불가";
+            break;
+          case error.TIMEOUT:
+            errorMessage = "❌ 위치 요청 시간 초과";
+            break;
+        }
+        mobileLog(`${errorMessage}: ${error.message}`, "error");
         setIsLocationTracking(false);
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 5000
+        timeout: 15000,
+        maximumAge: 30000
       }
     );
   };
@@ -165,6 +209,7 @@ const Map3D = () => {
       watchId.current = null;
     }
     setIsLocationTracking(false);
+    mobileLog("위치 추적 중지됨", "warning");
   };
 
   // GeoJSON 생성 함수
@@ -222,7 +267,6 @@ const Map3D = () => {
     if (!map.current) return;
 
     try {
-      // 관련 레이어들 먼저 제거
       const layersToRemove = ['clusters', 'cluster-count', 'route'];
       layersToRemove.forEach(layerId => {
         if (map.current.getLayer(layerId)) {
@@ -230,12 +274,11 @@ const Map3D = () => {
         }
       });
 
-      // 소스 제거
       if (map.current.getSource(sourceId)) {
         map.current.removeSource(sourceId);
       }
     } catch (error) {
-      console.warn(`소스 제거 중 오류 (무시됨): ${error.message}`);
+      mobileLog(`소스 제거 중 오류 (무시됨): ${error.message}`, "warning");
     }
   };
 
@@ -248,6 +291,8 @@ const Map3D = () => {
       if (mapContainer.current) {
         mapContainer.current.innerHTML = '';
       }
+
+      mobileLog(`지도 초기화 시작: [${center[0].toFixed(6)}, ${center[1].toFixed(6)}]`, "info");
 
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
@@ -290,16 +335,16 @@ const Map3D = () => {
         setLastUpdateTime(new Date().toLocaleTimeString());
         
         centerMapToUserLocation(userCoords);
-        console.log("내 위치:", userCoords);
+        mobileLog(`Geolocate 컨트롤로 위치 획득: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`, "success");
       });
 
       geolocateControl.current.on('error', (e) => {
-        console.warn('위치를 찾을 수 없습니다:', e);
+        mobileLog(`Geolocate 컨트롤 오류: ${e.message}`, "error");
       });
 
       map.current.on("load", () => {
         try {
-          // ✅ S 마커 제거 - 더 이상 시작 마커를 표시하지 않음
+          mobileLog("지도 로드 완료, 레이어 설정 시작", "success");
           setupMapLayers();
 
           setTimeout(() => {
@@ -311,17 +356,18 @@ const Map3D = () => {
             }, 2000);
           }, 1000);
         } catch (error) {
-          console.error("지도 로드 후 초기화 오류:", error);
+          mobileLog(`지도 로드 후 초기화 오류: ${error.message}`, "error");
         }
       });
 
       map.current.on('error', (e) => {
-        console.error('Mapbox 에러:', e);
+        mobileLog(`Mapbox 에러: ${e.message}`, "error");
       });
     };
 
     // 사용자 위치를 먼저 시도
     if (navigator.geolocation) {
+      mobileLog("초기 사용자 위치 요청 시작...", "info");
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const userCoords = [position.coords.longitude, position.coords.latitude];
@@ -329,12 +375,12 @@ const Map3D = () => {
           setLocationAccuracy(position.coords.accuracy);
           setLastUpdateTime(new Date().toLocaleTimeString());
           
-          console.log("초기 사용자 위치로 지도 초기화:", userCoords);
+          mobileLog(`초기 사용자 위치로 지도 초기화: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`, "success");
           initializeMap(userCoords);
           hasCenteredOnUser.current = true;
         },
         (error) => {
-          console.warn('초기 위치 가져오기 실패, CONFIG 좌표로 초기화:', error.message);
+          mobileLog(`초기 위치 가져오기 실패, CONFIG 좌표로 초기화: ${error.message}`, "warning");
           initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
         },
         { 
@@ -344,7 +390,7 @@ const Map3D = () => {
         }
       );
     } else {
-      console.warn('위치 서비스 미지원, CONFIG 좌표로 초기화');
+      mobileLog('위치 서비스 미지원, CONFIG 좌표로 초기화', "warning");
       initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
     }
 
@@ -363,10 +409,9 @@ const Map3D = () => {
       }
       
       isInitialized.current = false;
+      mobileLog("지도 컴포넌트 정리 완료", "info");
     };
   }, []);
-
-  // ✅ 시작 마커 업데이트 로직 제거 - 더 이상 필요하지 않음
 
   // 클러스터 데이터 업데이트
   const updateClusterData = (excludeDestination = null) => {
@@ -376,19 +421,20 @@ const Map3D = () => {
       const newGeojson = createGeojson(excludeDestination);
       map.current.getSource("markers").setData(newGeojson);
     } catch (error) {
-      console.warn("클러스터 데이터 업데이트 오류:", error);
+      mobileLog(`클러스터 데이터 업데이트 오류: ${error.message}`, "error");
     }
   };
 
-  // ✅ 간소화된 길찾기 함수 - 마커 클릭 시 바로 경로 표시
+  // ✅ 길찾기 함수 (모바일 로그 추가)
   const getRoute = async (end) => {
     if (!userLocation) {
+      mobileLog("❌ getRoute 호출됐지만 userLocation이 null", "error");
       alert("사용자 위치를 찾을 수 없습니다. 위치 서비스를 활성화해주세요.");
       return;
     }
 
     setIsRouting(true);
-    console.log("길찾기 시작:", userLocation, "→", end);
+    mobileLog(`🗺️ 길찾기 시작: [${userLocation[0].toFixed(6)}, ${userLocation[1].toFixed(6)}] → [${end[0].toFixed(6)}, ${end[1].toFixed(6)}]`, "info");
 
     try {
       const response = await fetch(
@@ -412,7 +458,6 @@ const Map3D = () => {
           return distance > 0.00001;
         });
 
-        // 안전하게 기존 경로 제거
         safeRemoveSourceAndLayers("route");
 
         map.current.addSource("route", {
@@ -451,8 +496,9 @@ const Map3D = () => {
 
         const distance = (routeData.distance / 1000).toFixed(1);
         const duration = Math.round(routeData.duration / 60);
+        
+        mobileLog(`✅ 경로 계산 성공: ${distance}km, ${duration}분`, "success");
 
-        // ✅ 목적지 정보 추가
         const destination = EXTRA_MARKERS.find(marker => 
           Math.abs(marker.lng - end[0]) < 0.000001 &&
           Math.abs(marker.lat - end[1]) < 0.000001
@@ -461,39 +507,66 @@ const Map3D = () => {
         alert(
           `🚶‍♂️ ${destination?.title || '목적지'}로 가는 경로\n📏 거리: ${distance}km\n⏰ 예상 시간: ${duration}분\n📍 경로 포인트: ${filteredRoute.length}개`
         );
-
-        console.log("경로 표시 완료");
       } else {
+        mobileLog("❌ 경로를 찾을 수 없음", "error");
         alert("경로를 찾을 수 없습니다.");
       }
     } catch (error) {
-      console.error("길찾기 오류:", error);
+      mobileLog(`❌ 길찾기 오류: ${error.message}`, "error");
       alert("길찾기 중 오류가 발생했습니다.");
     } finally {
       setIsRouting(false);
     }
   };
 
-  // ✅ 간소화된 경로 초기화
+  // 경로 초기화
   const clearRoute = () => {
     safeRemoveSourceAndLayers("route");
     setDestinationPoint(null);
     updateClusterData(null);
+    mobileLog("경로 초기화 완료", "info");
   };
 
-  // ✅ 마커 추가 함수 제거 - S, E 마커를 더 이상 사용하지 않음
-
-  // ✅ 간소화된 이벤트 핸들러 - 마커 클릭 시 바로 경로 계산
+  // ✅ 마커 클릭 핸들러 (모바일 로그 추가)
   const handlePinMarkerClick = (coords, feature) => {
-    console.log("마커 클릭됨, 경로 계산 시작:", coords);
+    mobileLog(`마커 클릭됨: [${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}]`, "info");
+    mobileLog(`현재 userLocation: ${userLocation ? `[${userLocation[0].toFixed(6)}, ${userLocation[1].toFixed(6)}]` : 'null'}`, "info");
     
     setDestinationPoint(coords);
     updateClusterData(coords);
     
     if (userLocation) {
-      getRoute(coords); // ✅ 바로 경로 계산
+      mobileLog("위치 정보 있음, 경로 계산 시작", "success");
+      getRoute(coords);
     } else {
-      alert("사용자 위치를 찾을 수 없습니다. 위치 서비스를 활성화해주세요.");
+      mobileLog("❌ 사용자 위치 없음 - 강제로 위치 요청 시도", "warning");
+      
+      if (navigator.geolocation) {
+        mobileLog("위치 정보 재요청 중...", "info");
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const userCoords = [position.coords.longitude, position.coords.latitude];
+            setUserLocation(userCoords);
+            mobileLog(`✅ 위치 정보 재획득 성공: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`, "success");
+            
+            setTimeout(() => {
+              getRoute(coords);
+            }, 100);
+          },
+          (error) => {
+            mobileLog(`❌ 위치 정보 재획득 실패: ${error.message}`, "error");
+            alert(`위치 서비스 오류: ${error.message}\n\n해결방법:\n1. 브라우저 설정에서 위치 권한 허용\n2. 페이지 새로고침`);
+          },
+          { 
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          }
+        );
+      } else {
+        mobileLog("❌ 브라우저가 위치 서비스를 지원하지 않음", "error");
+        alert("이 브라우저는 위치 서비스를 지원하지 않습니다.");
+      }
     }
   };
 
@@ -525,12 +598,14 @@ const Map3D = () => {
     }
     
     setIsARActive(true);
+    mobileLog("AR 오버레이 활성화됨", "info");
   };
 
   // AR 종료 함수
   const handleCloseAR = () => {
     setIsARActive(false);
     setSelectedMarkerData(null);
+    mobileLog("AR 오버레이 종료됨", "info");
   };
 
   const handleClusterClick = (event) => {
@@ -542,6 +617,8 @@ const Map3D = () => {
 
     const { cluster_id: clusterId, point_count: pointCount } = features[0].properties;
     const coordinates = features[0].geometry.coordinates.slice();
+
+    mobileLog(`클러스터 클릭됨: ${pointCount}개 마커`, "info");
 
     map.current
       .getSource("markers")
@@ -557,6 +634,7 @@ const Map3D = () => {
             center: coordinates,
             zoom: zoom,
           });
+          mobileLog(`클러스터 확대: zoom ${zoom}`, "info");
         } else {
           alert(
             `클러스터 정보\n마커 개수: ${pointCount}개\n좌표: ${coordinates[0].toFixed(4)}, ${coordinates[1].toFixed(4)}`
@@ -605,7 +683,7 @@ const Map3D = () => {
         }
       });
     } catch (error) {
-      console.warn("DOM 마커 업데이트 오류:", error);
+      mobileLog(`DOM 마커 업데이트 오류: ${error.message}`, "error");
     }
   };
 
@@ -706,8 +784,10 @@ const Map3D = () => {
       ["move", "zoom", "idle"].forEach((event) => {
         map.current.on(event, updateDOMMarkers);
       });
+
+      mobileLog("지도 레이어 설정 완료", "success");
     } catch (error) {
-      console.error("레이어 설정 오류:", error);
+      mobileLog(`레이어 설정 오류: ${error.message}`, "error");
     }
   };
 
@@ -736,20 +816,224 @@ const Map3D = () => {
         destinationPoint={destinationPoint}
       />
 
-      {/* 실시간 위치 정보 패널 */}
+      {/* ✅ 모바일 디버깅 패널 토글 버튼 */}
+      <button
+        onClick={() => setShowDebugPanel(!showDebugPanel)}
+        style={{
+          position: "absolute",
+          top: "10px",
+          left: "10px",
+          background: "#FF5722",
+          color: "white",
+          border: "none",
+          borderRadius: "50%",
+          width: "50px",
+          height: "50px",
+          fontSize: "20px",
+          cursor: "pointer",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
+          zIndex: 1001,
+        }}
+      >
+        🐛
+      </button>
+
+      {/* ✅ 모바일 디버깅 패널 */}
+      {showDebugPanel && (
+        <div
+          style={{
+            position: "absolute",
+            top: "70px",
+            left: "10px",
+            right: "10px",
+            background: "rgba(0, 0, 0, 0.95)",
+            color: "white",
+            padding: "15px",
+            borderRadius: "10px",
+            fontFamily: "monospace",
+            fontSize: "11px",
+            maxHeight: "350px",
+            overflowY: "auto",
+            zIndex: 1000,
+            backdropFilter: "blur(5px)",
+          }}
+        >
+          <div style={{ 
+            fontSize: "14px", 
+            fontWeight: "bold", 
+            marginBottom: "10px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between"
+          }}>
+            <span>🐛 디버깅 정보</span>
+            <button
+              onClick={() => setDebugInfo([])}
+              style={{
+                background: "#666",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "5px 10px",
+                fontSize: "10px",
+                cursor: "pointer",
+              }}
+            >
+              로그 지우기
+            </button>
+          </div>
+          
+          {/* ✅ 현재 상태 요약 */}
+          <div style={{ 
+            marginBottom: "15px", 
+            padding: "10px", 
+            background: "rgba(255,255,255,0.1)", 
+            borderRadius: "5px" 
+          }}>
+            <div><strong>위치상태:</strong> {userLocation ? '✅ 있음' : '❌ 없음'}</div>
+            <div><strong>추적상태:</strong> {isLocationTracking ? '✅ 활성' : '❌ 비활성'}</div>
+            <div><strong>정확도:</strong> {locationAccuracy ? `±${Math.round(locationAccuracy)}m` : '알수없음'}</div>
+            {userLocation && (
+              <div><strong>좌표:</strong> [{userLocation[0].toFixed(6)}, {userLocation[1].toFixed(6)}]</div>
+            )}
+            <div><strong>근처마커:</strong> {nearbyMarkers.length}개</div>
+            <div><strong>AR버튼:</strong> {showARButton ? '✅ 표시' : '❌ 숨김'}</div>
+          </div>
+
+          {/* ✅ 로그 목록 */}
+          <div style={{ marginBottom: "15px" }}>
+            {debugInfo.length === 0 ? (
+              <div style={{ textAlign: "center", color: "#999" }}>로그가 없습니다</div>
+            ) : (
+              debugInfo.map((log, index) => (
+                <div
+                  key={index}
+                  style={{
+                    marginBottom: "5px",
+                    padding: "5px",
+                    borderRadius: "3px",
+                    background: 
+                      log.type === 'error' ? 'rgba(244, 67, 54, 0.2)' :
+                      log.type === 'success' ? 'rgba(76, 175, 80, 0.2)' :
+                      log.type === 'warning' ? 'rgba(255, 152, 0, 0.2)' :
+                      'rgba(33, 150, 243, 0.2)',
+                    fontSize: "10px",
+                    lineHeight: "1.3"
+                  }}
+                >
+                  <span style={{ color: "#ccc" }}>[{log.time}]</span> {log.message}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* ✅ 디버깅 버튼들 */}
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: "1fr 1fr",
+            gap: "8px"
+          }}>
+            <button
+              onClick={checkLocationStatus}
+              style={{
+                background: "#FF9800",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "8px 12px",
+                fontSize: "11px",
+                cursor: "pointer",
+              }}
+            >
+              상태확인
+            </button>
+            
+            <button
+              onClick={() => {
+                if (navigator.geolocation) {
+                  mobileLog("강제 위치 요청 시작...", "info");
+                  navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                      const userCoords = [position.coords.longitude, position.coords.latitude];
+                      setUserLocation(userCoords);
+                      setLocationAccuracy(position.coords.accuracy);
+                      setLastUpdateTime(new Date().toLocaleTimeString());
+                      mobileLog("✅ 강제 위치 요청 성공!", "success");
+                    },
+                    (error) => {
+                      mobileLog(`❌ 강제 위치 요청 실패: ${error.message}`, "error");
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                  );
+                }
+              }}
+              style={{
+                background: "#4CAF50",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "8px 12px",
+                fontSize: "11px",
+                cursor: "pointer",
+              }}
+            >
+              위치 강제요청
+            </button>
+            
+            <button
+              onClick={isLocationTracking ? stopLocationTracking : startLocationTracking}
+              style={{
+                background: isLocationTracking ? "#F44336" : "#2196F3",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "8px 12px",
+                fontSize: "11px",
+                cursor: "pointer",
+              }}
+            >
+              {isLocationTracking ? "추적중지" : "추적시작"}
+            </button>
+            
+            <button
+              onClick={() => {
+                if (userLocation) {
+                  navigator.clipboard.writeText(`${userLocation[0]}, ${userLocation[1]}`);
+                  mobileLog("좌표가 클립보드에 복사됨", "info");
+                } else {
+                  mobileLog("복사할 위치 정보가 없음", "warning");
+                }
+              }}
+              style={{
+                background: "#9C27B0",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "8px 12px",
+                fontSize: "11px",
+                cursor: "pointer",
+              }}
+            >
+              좌표복사
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 실시간 위치 정보 패널 - 위치가 있을 때만 표시 */}
       {userLocation && (
         <div
           style={{
             position: "absolute",
-            top: "20px",
+            bottom: "120px",
             left: "20px",
+            right: "20px",
             background: "rgba(0, 0, 0, 0.8)",
             color: "white",
             padding: "15px",
             borderRadius: "10px",
             fontFamily: "monospace",
             fontSize: "12px",
-            minWidth: "280px",
             boxShadow: "0 4px 15px rgba(0,0,0,0.3)",
             zIndex: 1000,
             backdropFilter: "blur(5px)",
@@ -807,7 +1091,6 @@ const Map3D = () => {
               )}
             </div>
             
-            {/* ✅ 경로 추천 안내 */}
             <div style={{ 
               marginTop: "8px", 
               padding: "5px 8px", 
@@ -821,45 +1104,6 @@ const Map3D = () => {
               </div>
             </div>
           </div>
-
-          <div style={{ 
-            marginTop: "10px", 
-            display: "flex", 
-            gap: "5px" 
-          }}>
-            <button
-              onClick={isLocationTracking ? stopLocationTracking : startLocationTracking}
-              style={{
-                background: isLocationTracking ? "#F44336" : "#4CAF50",
-                color: "white",
-                border: "none",
-                borderRadius: "5px",
-                padding: "5px 10px",
-                fontSize: "10px",
-                cursor: "pointer",
-                flex: 1
-              }}
-            >
-              {isLocationTracking ? "추적 중지" : "실시간 추적"}
-            </button>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(`${userLocation[0]}, ${userLocation[1]}`);
-                alert("좌표가 복사되었습니다!");
-              }}
-              style={{
-                background: "#2196F3",
-                color: "white",
-                border: "none",
-                borderRadius: "5px",
-                padding: "5px 10px",
-                fontSize: "10px",
-                cursor: "pointer",
-              }}
-            >
-              복사
-            </button>
-          </div>
         </div>
       )}
 
@@ -872,17 +1116,18 @@ const Map3D = () => {
               zoom: 16,
               duration: 1000
             });
+            mobileLog("내 위치로 지도 이동", "info");
           }}
           style={{
             position: "absolute",
-            top: "140px",
+            bottom: "70px",
             right: "20px",
             background: "#007cbf",
             color: "white",
             border: "none",
-            borderRadius: "50px",
-            padding: "10px",
-            fontSize: "16px",
+            borderRadius: "50%",
+            padding: "15px",
+            fontSize: "18px",
             cursor: "pointer",
             boxShadow: "0 2px 10px rgba(0,0,0,0.3)",
             zIndex: 1000,
