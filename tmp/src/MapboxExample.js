@@ -114,23 +114,6 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; // 미터 단위 거리
 };
 
-// 반경 내 마커 찾기 함수
-const findMarkersWithinRadius = (userLocation, markers, radiusMeters = 100) => {
-  if (!userLocation) return [];
-
-  const [userLng, userLat] = userLocation;
-
-  return markers.filter((marker) => {
-    const distance = calculateDistance(
-      userLat,
-      userLng,
-      marker.lat,
-      marker.lng
-    );
-    return distance <= radiusMeters;
-  });
-};
-
 const Map3D = () => {
   // Refs
   const mapContainer = useRef(null);
@@ -140,7 +123,6 @@ const Map3D = () => {
   const watchId = useRef(null);
   const hasCenteredOnUser = useRef(false);
   const isInitialized = useRef(false);
-  const isInit = useRef(false);
   // State
   const [destinationPoint, setDestinationPoint] = useState(null);
   const [isRouting, setIsRouting] = useState(false);
@@ -161,7 +143,6 @@ const Map3D = () => {
   const [debugInfo, setDebugInfo] = useState([]);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
 
-  const startPoint = [CONFIG.targetLng, CONFIG.targetLat];
 
   // 모바일용 로그 함수
   const mobileLog = (message, type = "info") => {
@@ -175,31 +156,58 @@ const Map3D = () => {
     setDebugInfo((prev) => [logEntry, ...prev.slice(0, 9)]); // 최근 10개만 유지
     console.log(`[${timestamp}] ${message}`);
   };
-  useEffect(() => {
-  if (!userLocation) {
-    setNearbyMarkers([]);
-    setShowARButton(false);
-    return;
+  function getClosestMarkerAndDistance(userLocation, markers) {
+    if (!userLocation || markers.length === 0) {
+      return { nearest: null, distance: null };
+    }
+    let minDist = Infinity;
+    let nearest = null;
+    markers.forEach((m) => {
+      const d = calculateDistance(
+        userLocation[1],
+        userLocation[0],
+        m.lat,
+        m.lng
+      );
+      if (d < minDist) {
+        minDist = d;
+        nearest = m;
+      }
+    });
+    return { nearest, distance: nearest ? Math.round(minDist) : null };
   }
+  useEffect(() => {
+    if (!userLocation) {
+      setClosestMarker(null);
+      setClosestDistance(null);
+      setNearbyMarkers([]);
+      setShowARButton(false);
+      return;
+    }
 
-  // 1) 비활성화된 마커는 제외
-  const activeMarkers = EXTRA_MARKERS.filter(
-    (m) => !disabledMarkerTitles.includes(m.title)
-  );
+    // 1) 비활성화된 마커는 제외
+    const activeMarkers = EXTRA_MARKERS.filter(
+      (m) => !disabledMarkerTitles.includes(m.title)
+    );
+    // 가장 가까운 마커/거리 계산
+    const { nearest, distance } = getClosestMarkerAndDistance(
+      userLocation,
+      activeMarkers
+    );
+    const inRange = nearest && distance <= 100;
 
-  // 2) 나머지 마커 중 100m 이내 필터링
-  const markersInRange = findMarkersWithinRadius(
-    userLocation,
-    activeMarkers,
-    100
-  );
+    setClosestMarker(inRange ? nearest : null);
+    setClosestDistance(inRange ? distance : null);
+    setShowARButton(!!inRange);
+    setNearbyMarkers(inRange ? [nearest] : []);
 
-  // 3) 상태 업데이트
-  setNearbyMarkers(markersInRange);
-  setShowARButton(markersInRange.length > 0);
-
-  mobileLog(`반경 100m 내 활성 마커: ${markersInRange.length}개`, "info");
-}, [userLocation, disabledMarkerTitles]);
+    mobileLog(
+      inRange
+        ? `가장 가까운 활성 마커: ${nearest.title} (${distance}m)`
+        : `100m 내 활성 마커 없음`,
+      "info"
+    );
+  }, [userLocation, disabledMarkerTitles]);
   // 위치 상태 체크 함수 (모바일용)
   const checkLocationStatus = () => {
     mobileLog("=== 위치 정보 상태 체크 ===", "info");
@@ -226,27 +234,6 @@ const Map3D = () => {
       });
     }
   };
-
-  // 반경 내 마커 체크 및 AR 버튼 표시 조건 업데이트
-  useEffect(() => {
-    if (userLocation) {
-      const allMarkers = [...EXTRA_MARKERS];
-
-      const markersInRange = findMarkersWithinRadius(
-        userLocation,
-        allMarkers,
-        100
-      );
-      setNearbyMarkers(markersInRange);
-      setShowARButton(markersInRange.length > 0);
-
-      mobileLog(`반경 100m 내 마커: ${markersInRange.length}개`, "info");
-    } else {
-      setNearbyMarkers([]);
-      setShowARButton(false);
-    }
-  }, [userLocation]);
-
   // 사용자 위치로 지도 센터링 (한번만)
   const centerMapToUserLocation = (userCoords, zoomLevel = 16) => {
     if (map.current && !hasCenteredOnUser.current) {
@@ -410,110 +397,88 @@ const Map3D = () => {
     }
   };
   const initializeMap = (center) => {
+    if (mapContainer.current) {
+      mapContainer.current.innerHTML = "";
+    }
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/streets-v12",
-      center,
+      center: center,
       zoom: 15,
       pitch: 60,
       bearing: -17.6,
       antialias: true,
+      preserveDrawingBuffer: true,
+      renderWorldCopies: false,
     });
-    // NavigationControl, GeolocateControl, 레이어, 마커 렌더링 등 추가 구현
-    map.current.on("move", () => {
-      // 필요 시 마커 업데이트 로직
+
+    map.current.addControl(
+      new mapboxgl.NavigationControl({
+        visualizePitch: true,
+        showCompass: true,
+        showZoom: true,
+      }),
+      "bottom-right"
+    );
+
+    geolocateControl.current = new mapboxgl.GeolocateControl({
+      positionOptions: {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 5000,
+      },
+      trackUserLocation: true,
+      showUserHeading: true,
+      showAccuracyCircle: true,
+    });
+
+    map.current.addControl(geolocateControl.current, "bottom-right");
+
+    geolocateControl.current.on("geolocate", (e) => {
+      const userCoords = [e.coords.longitude, e.coords.latitude];
+      setUserLocation(userCoords);
+      setLocationAccuracy(e.coords.accuracy);
+      setLastUpdateTime(new Date().toLocaleTimeString());
+
+      centerMapToUserLocation(userCoords);
+      mobileLog(
+        `Geolocate 컨트롤로 위치 획득: [${userCoords[0].toFixed(
+          6
+        )}, ${userCoords[1].toFixed(6)}]`,
+        "success"
+      );
+    });
+
+    geolocateControl.current.on("error", (e) => {
+      mobileLog(`Geolocate 컨트롤 오류: ${e.message}`, "error");
+    });
+
+    map.current.on("load", () => {
+      try {
+        mobileLog("지도 로드 완료, 레이어 설정 시작", "success");
+        setupMapLayers();
+
+        setTimeout(() => {
+          if (geolocateControl.current) {
+            geolocateControl.current.trigger();
+          }
+          setTimeout(() => {
+            startLocationTracking();
+          }, 2000);
+        }, 1000);
+      } catch (error) {
+        mobileLog(`지도 로드 후 초기화 오류: ${error.message}`, "error");
+      }
+    });
+
+    map.current.on("error", (e) => {
+      mobileLog(`Mapbox 에러: ${e.message}`, "error");
     });
   };
   // 지도 초기화
   useEffect(() => {
     if (isInitialized.current || map.current) return;
     isInitialized.current = true;
-
-    const initializeMap = (center) => {
-      if (mapContainer.current) {
-        mapContainer.current.innerHTML = "";
-      }
-
-      mobileLog(
-        `지도 초기화 시작: [${center[0].toFixed(6)}, ${center[1].toFixed(6)}]`,
-        "info"
-      );
-
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: "mapbox://styles/mapbox/streets-v12",
-        center: center,
-        zoom: 15,
-        pitch: 60,
-        bearing: -17.6,
-        antialias: true,
-        preserveDrawingBuffer: true,
-        renderWorldCopies: false,
-      });
-
-      map.current.addControl(
-        new mapboxgl.NavigationControl({
-          visualizePitch: true,
-          showCompass: true,
-          showZoom: true,
-        }),
-        "bottom-right"
-      );
-
-      geolocateControl.current = new mapboxgl.GeolocateControl({
-        positionOptions: {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 5000,
-        },
-        trackUserLocation: true,
-        showUserHeading: true,
-        showAccuracyCircle: true,
-      });
-
-      map.current.addControl(geolocateControl.current, "bottom-right");
-
-      geolocateControl.current.on("geolocate", (e) => {
-        const userCoords = [e.coords.longitude, e.coords.latitude];
-        setUserLocation(userCoords);
-        setLocationAccuracy(e.coords.accuracy);
-        setLastUpdateTime(new Date().toLocaleTimeString());
-
-        centerMapToUserLocation(userCoords);
-        mobileLog(
-          `Geolocate 컨트롤로 위치 획득: [${userCoords[0].toFixed(
-            6
-          )}, ${userCoords[1].toFixed(6)}]`,
-          "success"
-        );
-      });
-
-      geolocateControl.current.on("error", (e) => {
-        mobileLog(`Geolocate 컨트롤 오류: ${e.message}`, "error");
-      });
-
-      map.current.on("load", () => {
-        try {
-          mobileLog("지도 로드 완료, 레이어 설정 시작", "success");
-          setupMapLayers();
-
-          setTimeout(() => {
-            if (geolocateControl.current) {
-              geolocateControl.current.trigger();
-            }
-            setTimeout(() => {
-              startLocationTracking();
-            }, 2000);
-          }, 1000);
-        } catch (error) {
-          mobileLog(`지도 로드 후 초기화 오류: ${error.message}`, "error");
-        }
-      });
-
-      map.current.on("error", (e) => {
-        mobileLog(`Mapbox 에러: ${e.message}`, "error");
-      });
-    };
 
     // 사용자 위치를 먼저 시도
     if (navigator.geolocation) {
@@ -574,17 +539,6 @@ const Map3D = () => {
     };
   }, []);
 
-  // 클러스터 데이터 업데이트
-  const updateClusterData = (excludeDestination = null) => {
-    if (!map.current?.getSource("markers")) return;
-
-    try {
-      const newGeojson = createGeojson(excludeDestination);
-      map.current.getSource("markers").setData(newGeojson);
-    } catch (error) {
-      mobileLog(`클러스터 데이터 업데이트 오류: ${error.message}`, "error");
-    }
-  };
 
   // 고정 위치 기반 길찾기 함수
   const getRouteWithFixedLocation = async (fixedStartLocation, end) => {
@@ -790,29 +744,6 @@ const Map3D = () => {
       }
     }
   };
-  useEffect(() => {
-    if (isInit.current) return;
-    isInit.current = true;
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const coords = [pos.coords.longitude, pos.coords.latitude];
-          setUserLocation(coords);
-          initializeMap(coords);
-        },
-        () => {
-          initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
-        },
-        { enableHighAccuracy: true }
-      );
-    } else {
-      initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
-    }
-    return () => {
-      if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
-      map.current?.remove();
-    };
-  }, []);
   // AR 버튼 클릭 핸들러
   const handleARButtonClick = () => {
     if (!closestMarker) return;
@@ -824,7 +755,7 @@ const Map3D = () => {
       id: closestMarker.title,
     });
     setIsARActive(true);
-    setDisabledMarkerTitles(prev => [...prev, closestMarker.title]);
+    setDisabledMarkerTitles((prev) => [...prev, closestMarker.title]);
     setClosestMarker(null);
   };
 
@@ -1064,27 +995,6 @@ const Map3D = () => {
         </div>
       )}
 
-      {/* AR 버튼 */}
-      {showARButton && (
-        <button
-          onClick={handleARButtonClick}
-          style={{
-            position: "absolute",
-            top: 20,
-            right: 20,
-            background: "linear-gradient(135deg,#667eea 0%,#764ba2 100%)",
-            color: "white",
-            border: "none",
-            borderRadius: "50px",
-            padding: "12px 20px",
-            fontSize: "14px",
-            cursor: "pointer",
-            zIndex: 1000,
-          }}
-        >
-          📷 AR 카메라
-        </button>
-      )}
       {/* 모바일 디버깅 패널 토글 버튼 */}
       <button
         onClick={() => setShowDebugPanel(!showDebugPanel)}
