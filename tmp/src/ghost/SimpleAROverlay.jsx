@@ -10,6 +10,7 @@ import ScorePanel from "./ScorePanel";
 const ARRIVE_RADIUS_M = 1.2; // 위치 도착 판정 반경(≈1.2m)
 const AIM_TOLERANCE_DEG = 6; // 조준 허용각(±6° 내)
 const CAMERA_FOV_DEG = 60; // 사용 중인 가로 시야각(정보 패널 텍스트도 60°로 표시 중)
+
 export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const videoRef = useRef(null);
 
@@ -160,6 +161,8 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         reason: "도착+조준 성공",
       };
     }
+
+    return ghost;
   };
 
   // 기본 세팅
