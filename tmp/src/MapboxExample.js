@@ -147,6 +147,20 @@ const Map3D = () => {
   const [isWalkMode, setIsWalkMode] = useState(false);
   const isWalkModeRef = useRef(false);
   const routeReqRef = useRef(0);
+  // 총/비활성화 개수 & 퍼센트
+  const totalMarkerCount = EXTRA_MARKERS.length;
+  const disabledCount = React.useMemo(() => {
+    const set = new Set(disabledMarkerTitles);
+    return EXTRA_MARKERS.reduce(
+      (acc, m) => acc + (set.has(m.title) ? 1 : 0),
+      0
+    );
+  }, [disabledMarkerTitles]);
+  const disabledPct = totalMarkerCount
+    ? Math.round((disabledCount / totalMarkerCount) * 100)
+    : 0;
+  const gaugeAngle = (disabledCount / (totalMarkerCount || 1)) * 360;
+
   useEffect(() => {
     isWalkModeRef.current = isWalkMode;
     updateDOMMarkers(); // 모드 바뀌면 마커 스타일/인터랙션 갱신
@@ -659,10 +673,6 @@ const Map3D = () => {
         new mapboxgl.LngLatBounds(filteredRoute[0], filteredRoute[0])
       );
       map.current.fitBounds(bounds, { padding: 50 });
-
-      const distance = (routeData.distance / 1000).toFixed(1);
-      const duration = Math.round(routeData.duration / 60);
-      alert(`📏 ${distance}km · ⏰ ${duration}분`);
     } catch (e) {
       mobileLog(`❌ route req #${myId} 오류: ${e.message}`, "error");
       alert("길찾기 중 오류가 발생했습니다.");
@@ -1519,7 +1529,78 @@ const Map3D = () => {
           <span>AR 카메라</span>
         </button>
       )}
+      {isWalkMode && (
+        <div
+          style={{
+            position: "absolute",
+            left: 20,
+            bottom: 24,
+            zIndex: 1200,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            background: "rgba(255,255,255,0.95)",
+            borderRadius: 12,
+            padding: "10px 12px",
+            boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
+          }}
+        >
+          {/* 도넛 게이지 */}
+          <div
+            aria-label="비활성화 마커 비율 게이지"
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: "50%",
+              background: `conic-gradient(#ff2d55 ${gaugeAngle}deg, #e6e6e6 0deg)`,
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+            }}
+            title={`비활성화 ${disabledPct}% (${disabledCount}/${totalMarkerCount})`}
+          >
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: "50%",
+                background: "#fff",
+                display: "grid",
+                placeItems: "center",
+                fontSize: 12,
+                fontWeight: 800,
+                color: "#333",
+              }}
+            >
+              {disabledPct}%
+            </div>
+          </div>
 
+          {/* 설명/카운트/초기화 */}
+          <div style={{ minWidth: 120 }}>
+            <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
+              비활성화된 마커
+            </div>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>
+              {disabledCount} / {totalMarkerCount}
+            </div>
+            <button
+              onClick={() => setDisabledMarkerTitles([])}
+              style={{
+                border: "none",
+                background: "#3A8049",
+                color: "#fff",
+                borderRadius: 6,
+                padding: "6px 10px",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              초기화
+            </button>
+          </div>
+        </div>
+      )}
       {/* SimpleAROverlay */}
       <SimpleAROverlay
         isActive={isARActive}
