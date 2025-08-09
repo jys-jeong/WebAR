@@ -5,8 +5,39 @@ import useDeviceOrientation from "./useDeviceOrientation";
 import useGeoLocation from "./useGeoLocation";
 import useCompass from "./useCompass";
 import Ghost from "./Ghost";
-import ScorePanel from "./ScorePanel";
 
+// ====== 작은 HUD: 남은 유령 / 포인트 / 퇴치수 ======
+function PointsHUD({ left, points, total }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 20,
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: "rgba(0,0,0,0.6)",
+        color: "#fff",
+        padding: "8px 14px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: 0.2,
+        display: "flex",
+        gap: 12,
+        zIndex: 10,
+        pointerEvents: "none", // 클릭 방해 X
+        backdropFilter: "blur(4px)",
+        border: "1px solid rgba(255,255,255,0.15)",
+      }}
+    >
+      <span>👻 남은 유령: {left}</span>
+      <span>⭐ 포인트: {points}</span>
+      <span>🗡️ 퇴치: {total}</span>
+    </div>
+  );
+}
+
+// 도착/조준 기준
 const ARRIVE_RADIUS_M = 1.2;
 const AIM_TOLERANCE_DEG = 6;
 const CAMERA_FOV_DEG = 60;
@@ -21,19 +52,19 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const {
     ghosts,
     setGhosts,
-    score,
+    score: points,           // ← score를 points로 별칭
     totalCaught,
     resetGame,
     catchGhost,
     movementPatterns,
   } = useGhostGame();
 
-  // 클릭 이펙트(링/플래시) + 점수 텍스트(+100p) + 오디오 컨텍스트(햅틱 대체)
+  // 클릭 이펙트(링/플래시) + +100p 텍스트 + 오디오 컨텍스트(햅틱 대체)
   const [fxList, setFxList] = useState([]);
   const [pointsFx, setPointsFx] = useState([]);
   const audioCtxRef = useRef(null);
 
-  // 햅틱 유틸: vibrate → WebAudio fallback
+  // 햅틱: vibrate → WebAudio fallback
   const haptic = (ms = 40) => {
     let ok = false;
     try {
@@ -56,10 +87,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-
-      setTimeout(() => {
-        try { osc.stop(); } catch {}
-      }, Math.min(120, ms + 60));
+      setTimeout(() => { try { osc.stop(); } catch {} }, Math.min(120, ms + 60));
     } catch {}
   };
 
@@ -107,7 +135,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       return ghost;
     }
 
-    // gps-fixed: 도착(≤1.2m) + 시야각/조준 각도 충족시만 중앙 노출
+    // gps-fixed: 도착(≤1.2m) + 시야각/조준 각도
     if (
       ghost.type === "gps-fixed" &&
       location &&
@@ -163,7 +191,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         };
       }
 
-      // 도착+조준 → 중앙 표시
+      // 도착+조준 성공 → 중앙 표시
       const screenX = 50;
       const screenY = 50;
       const sizeScaleRaw = 50 / Math.max(distance, 0.5);
@@ -185,7 +213,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     return ghost;
   };
 
-  // 기본 세팅
+  // 초기화
   useEffect(() => {
     if (!isActive) return;
     if (location) resetGame(location);
@@ -228,7 +256,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     });
   }, [isActive, markerData, setGhosts]);
 
-  // camera
+  // 카메라
   useEffect(() => {
     if (!isActive) return;
     navigator.mediaDevices
@@ -286,7 +314,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
 
   // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트
   const handleGhostClick = (idx, pg) => {
-    catchGhost(idx); // 점수 +100은 useGhostGame에서 처리하도록(아래 참고)
+    catchGhost(idx); // useGhostGame에서 포인트 +100 처리
     haptic(50);
 
     if (pg?.pos) {
@@ -305,6 +333,9 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   return (
     <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "#000", zIndex: 9999 }}>
       <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+
+      {/* 포인트 HUD (Score → 포인트) */}
+      <PointsHUD left={ghosts.length} points={points} total={totalCaught} />
 
       {/* 유령 레이어(패널보다 위) */}
       <div style={{ position: "absolute", inset: 0, zIndex: 60, pointerEvents: "auto" }}>
@@ -349,11 +380,6 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           +100p
         </div>
       ))}
-
-      {/* 점수 패널(클릭 방해 X) */}
-      <div style={{ pointerEvents: "none", zIndex: 10 }}>
-        <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
-      </div>
 
       {/* ⬅️ 내 정보 패널 (작고 클릭 패스-스루) */}
       <div
