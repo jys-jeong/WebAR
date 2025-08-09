@@ -1533,22 +1533,27 @@ const Map3D = () => {
         <div
           style={{
             position: "absolute",
-            left: 20,
-            bottom: 24,
+            top: "calc(16px + env(safe-area-inset-top))", // iOS notch 대응
+            left: "50%",
+            transform: "translateX(-50%)",
             zIndex: 1200,
-            minWidth: 220,
+            width: "min(320px, calc(100% - 32px))",
             padding: "10px 12px",
             borderRadius: 12,
             background: "rgba(255,255,255,0.95)",
             boxShadow: "0 6px 16px rgba(0,0,0,0.12)",
           }}
         >
-          {/* 헤더/숫자 */}
           <div
-            style={{ display: "flex", alignItems: "center", marginBottom: 8 }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 8,
+            }}
           >
             <span style={{ fontSize: 12, color: "#666" }}>비활성화된 마커</span>
-            <span style={{ marginLeft: "auto", fontSize: 12, color: "#333" }}>
+            <span style={{ marginLeft: 8, fontSize: 12, color: "#333" }}>
               {disabledCount} / {totalMarkerCount} ({disabledPct}%)
             </span>
           </div>
@@ -1556,7 +1561,7 @@ const Map3D = () => {
           {/* 얇은 바 게이지 */}
           <div
             style={{
-              height: 8, // ← 얇은 바 두께
+              height: 6,
               borderRadius: 999,
               background: "#e9ecef",
               overflow: "hidden",
@@ -1579,23 +1584,6 @@ const Map3D = () => {
               }}
             />
           </div>
-
-          {/* (선택) 초기화 버튼 */}
-          <button
-            onClick={() => setDisabledMarkerTitles([])}
-            style={{
-              marginTop: 8,
-              border: "none",
-              background: "#3A8049",
-              color: "#fff",
-              borderRadius: 6,
-              padding: "6px 10px",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-          >
-            초기화
-          </button>
         </div>
       )}
       {/* SimpleAROverlay */}
