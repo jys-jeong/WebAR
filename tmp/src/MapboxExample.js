@@ -170,7 +170,6 @@ const Map3D = () => {
       type: type,
     };
 
-    setDebugInfo((prev) => [logEntry, ...prev.slice(0, 9)]); // 최근 10개만 유지
     console.log(`[${timestamp}] ${message}`);
   };
   function getClosestMarkerAndDistance(userLocation, markers) {
@@ -196,8 +195,6 @@ const Map3D = () => {
   useEffect(() => {
     if (!userLocation) {
       setClosestMarker(null);
-      setClosestDistance(null);
-      setNearbyMarkers([]);
       setShowARButton(false);
       return;
     }
@@ -215,9 +212,7 @@ const Map3D = () => {
     setShowARButton(inRange);
 
     setClosestMarker(inRange ? nearest : null);
-    setClosestDistance(inRange ? distance : null);
     setShowARButton(!!inRange);
-    setNearbyMarkers(inRange ? [nearest] : []);
 
     mobileLog(
       inRange
@@ -257,8 +252,6 @@ const Map3D = () => {
       navigator.geolocation.clearWatch(watchId.current);
     }
 
-    setIsLocationTracking(true);
-
     watchId.current = navigator.geolocation.watchPosition(
       (position) => {
         const { longitude, latitude, accuracy } = position.coords;
@@ -272,8 +265,6 @@ const Map3D = () => {
         );
 
         setUserLocation(userCoords);
-        setLocationAccuracy(accuracy);
-        setLastUpdateTime(new Date().toLocaleTimeString());
 
         if (map.current && map.current.isStyleLoaded()) {
           centerMapToUserLocation(userCoords);
@@ -293,7 +284,6 @@ const Map3D = () => {
             break;
         }
         mobileLog(`${errorMessage}: ${error.message}`, "error");
-        setIsLocationTracking(false);
       },
       {
         enableHighAccuracy: true,
@@ -309,7 +299,6 @@ const Map3D = () => {
       navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null;
     }
-    setIsLocationTracking(false);
     mobileLog("위치 추적 중지됨", "warning");
   };
 
@@ -429,8 +418,6 @@ const Map3D = () => {
     geolocateControl.current.on("geolocate", (e) => {
       const userCoords = [e.coords.longitude, e.coords.latitude];
       setUserLocation(userCoords);
-      setLocationAccuracy(e.coords.accuracy);
-      setLastUpdateTime(new Date().toLocaleTimeString());
 
       centerMapToUserLocation(userCoords);
       mobileLog(
@@ -482,8 +469,6 @@ const Map3D = () => {
             position.coords.latitude,
           ];
           setUserLocation(userCoords);
-          setLocationAccuracy(position.coords.accuracy);
-          setLastUpdateTime(new Date().toLocaleTimeString());
 
           mobileLog(
             `초기 사용자 위치로 지도 초기화: [${userCoords[0].toFixed(
@@ -561,7 +546,6 @@ const Map3D = () => {
 
     // 🔢 이 호출만의 고유 id
     const myId = ++routeReqRef.current;
-    setIsRouting(true);
     mobileLog(`route req #${myId} 시작`, "info");
 
     try {
@@ -642,8 +626,6 @@ const Map3D = () => {
       mobileLog(`❌ route req #${myId} 오류: ${e.message}`, "error");
       alert("길찾기 중 오류가 발생했습니다.");
     } finally {
-      // 최신/스테일 상관없이 로딩 플래그만 정리
-      setIsRouting(false);
     }
   };
   const handleGaugeStop = () => {
@@ -652,7 +634,6 @@ const Map3D = () => {
     setIsARActive(false);
     clearRoute();
     setClosestMarker(null);
-    setNearbyMarkers([]);
   };
 
   // 길찾기 함수 (현재 위치 고정)
@@ -672,7 +653,6 @@ const Map3D = () => {
   // ✅ 경로 초기화 (마커 유지)
   const clearRoute = () => {
     safeRemoveSourceAndLayers("walk-route");
-    setDestinationPoint(null);
     // ✅ updateClusterData 호출 제거 - 마커들을 유지
     // updateClusterData(null); // 이 줄을 제거하거나 주석 처리
     mobileLog("경로 초기화 완료 (마커 유지)", "info");
@@ -694,7 +674,6 @@ const Map3D = () => {
       "info"
     );
 
-    setDestinationPoint(coords);
     // ✅ updateClusterData 호출 제거 - 마커들을 유지
     // updateClusterData(coords); // 이 줄을 제거하거나 주석 처리
 

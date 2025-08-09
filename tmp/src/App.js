@@ -1,6 +1,6 @@
 import logo from './logo.svg';
 import './App.css';
-import Map3D from './real/Map3D';
+import Map3D from './MapboxExample';
 
 
 
