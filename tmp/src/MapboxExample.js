@@ -1475,10 +1475,10 @@ const Map3D = () => {
           style={{
             position: "absolute",
             left: "50%",
-            transform: "translateX(-50%)", // 가운데 정렬
-            bottom: "calc(24px + env(safe-area-inset-bottom))", // 하단 + 노치 대응
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            color: "white",
+            transform: "translate(-50%, 0)", // 기본 위치
+            bottom: "calc(24px + env(safe-area-inset-bottom))",
+            background: "#ffffff",
+            color: "black",
             border: "none",
             borderRadius: "50px",
             padding: "12px 20px",
@@ -1490,19 +1490,20 @@ const Map3D = () => {
             display: "flex",
             alignItems: "center",
             gap: "8px",
-            transition: "all 0.3s ease",
             minWidth: "140px",
             justifyContent: "center",
-            animation: "arButtonPulse 2s infinite",
+            // 등장 애니메이션 + 기존 펄스 애니메이션(등장 후 시작)
+            animation:
+              "slideUpIn 280ms ease-out both, arButtonPulse 2s infinite 280ms",
           }}
           onMouseEnter={(e) => {
             const el = e.currentTarget;
-            el.style.transform = "translate(-50%, -2px)"; // X 고정 + Y 살짝 위
+            el.style.transform = "translate(-50%, -2px)"; // X 고정, Y만 살짝
             el.style.boxShadow = "0 6px 20px rgba(0,0,0,0.3)";
           }}
           onMouseLeave={(e) => {
             const el = e.currentTarget;
-            el.style.transform = "translate(-50%, 0)"; // 원위치
+            el.style.transform = "translate(-50%, 0)";
             el.style.boxShadow = "0 4px 15px rgba(0,0,0,0.2)";
           }}
         >
