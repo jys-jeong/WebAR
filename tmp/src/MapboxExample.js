@@ -1049,12 +1049,12 @@ const Map3D = () => {
         }}
       />
 
-      {/* 길찾기 컨트롤 */}
+      {/* 길찾기 컨트롤
       <DirectionsControl
         onClearRoute={clearRoute}
         isRouting={isRouting}
         destinationPoint={destinationPoint}
-      />
+      /> */}
       {/* 최근접 마커 정보 표시 */}
       {closestMarker && (
         <div
@@ -1074,7 +1074,7 @@ const Map3D = () => {
         </div>
       )}
 
-      {/* 모바일 디버깅 패널 토글 버튼 */}
+      {/* 모바일 디버깅 패널 토글 버튼
       <button
         onClick={() => setShowDebugPanel(!showDebugPanel)}
         style={{
@@ -1094,10 +1094,10 @@ const Map3D = () => {
         }}
       >
         🐛
-      </button>
+      </button> */}
 
       {/* 모바일 디버깅 패널 */}
-      {showDebugPanel && (
+      {/* {showDebugPanel && (
         <div
           style={{
             position: "absolute",
@@ -1144,7 +1144,7 @@ const Map3D = () => {
           </div>
 
           {/* 현재 상태 요약 */}
-          <div
+          {/* <div
             style={{
               marginBottom: "15px",
               padding: "10px",
@@ -1177,10 +1177,10 @@ const Map3D = () => {
             <div>
               <strong>AR버튼:</strong> {showARButton ? "✅ 표시" : "❌ 숨김"}
             </div>
-          </div>
+          </div> */}
 
           {/* 로그 목록 */}
-          <div style={{ marginBottom: "15px" }}>
+          {/* <div style={{ marginBottom: "15px" }}>
             {debugInfo.length === 0 ? (
               <div style={{ textAlign: "center", color: "#999" }}>
                 로그가 없습니다
@@ -1210,10 +1210,10 @@ const Map3D = () => {
                 </div>
               ))
             )}
-          </div>
+          </div> */}
 
           {/* 디버깅 버튼들 */}
-          <div
+          {/* <div
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
@@ -1317,10 +1317,10 @@ const Map3D = () => {
             </button>
           </div>
         </div>
-      )}
+      )} }}
 
       {/* 실시간 위치 정보 패널 - 위치가 있을 때만 표시 */}
-      {userLocation && (
+      {/* {userLocation && (
         <div
           style={{
             position: "absolute",
@@ -1402,7 +1402,7 @@ const Map3D = () => {
             </div>
           </div>
         </div>
-      )}
+      )} */}
       {!isWalkMode ? (
         // ✅ 하단 중앙 원형 Start 버튼
         <button
@@ -1529,7 +1529,7 @@ const Map3D = () => {
           <span>AR 카메라</span>
         </button>
       )}
-      {isWalkMode && (
+      {(
         <div
           style={{
             position: "absolute",
@@ -1537,7 +1537,7 @@ const Map3D = () => {
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 1200,
-            width: "min(320px, calc(100% - 32px))",
+            width: "50%",
             padding: "10px 12px",
             borderRadius: 12,
             background: "rgba(255,255,255,0.95)",
@@ -1552,7 +1552,6 @@ const Map3D = () => {
               marginBottom: 8,
             }}
           >
-            <span style={{ fontSize: 12, color: "#666" }}>비활성화된 마커</span>
             <span style={{ marginLeft: 8, fontSize: 12, color: "#333" }}>
               {disabledCount} / {totalMarkerCount} ({disabledPct}%)
             </span>
