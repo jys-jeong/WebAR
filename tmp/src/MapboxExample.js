@@ -143,6 +143,15 @@ const Map3D = () => {
   const [debugInfo, setDebugInfo] = useState([]);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const disabledTitlesRef = useRef([]);
+
+  const [isWalkMode, setIsWalkMode] = useState(false);
+  const isWalkModeRef = useRef(false);
+
+  useEffect(() => {
+    isWalkModeRef.current = isWalkMode;
+    updateDOMMarkers(); // 모드 바뀌면 마커 스타일/인터랙션 갱신
+  }, [isWalkMode]);
+
   useEffect(() => {
     disabledTitlesRef.current = disabledMarkerTitles;
     updateDOMMarkers(); // 비활성 목록 바뀌면 마커 스타일 갱신
@@ -197,7 +206,8 @@ const Map3D = () => {
       userLocation,
       activeMarkers
     );
-    const inRange = nearest && distance <= 100;
+    const inRange = isWalkMode && nearest && distance <= 100;
+    setShowARButton(inRange);
 
     setClosestMarker(inRange ? nearest : null);
     setClosestDistance(inRange ? distance : null);
@@ -210,7 +220,7 @@ const Map3D = () => {
         : `100m 내 활성 마커 없음`,
       "info"
     );
-  }, [userLocation, disabledMarkerTitles]);
+  }, [userLocation, disabledMarkerTitles, isWalkMode]);
   // 위치 상태 체크 함수 (모바일용)
   const checkLocationStatus = () => {
     mobileLog("=== 위치 정보 상태 체크 ===", "info");
@@ -694,6 +704,7 @@ const Map3D = () => {
 
   // ✅ 마커 클릭 핸들러 (마커 유지 버전)
   const handlePinMarkerClick = (coords, feature) => {
+    if (!isWalkMode) return;
     mobileLog(
       `마커 클릭됨: [${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}]`,
       "info"
@@ -837,7 +848,8 @@ const Map3D = () => {
         const coordArr = feature.geometry.coordinates;
         const key = coordKey(coordArr);
         const title = feature.properties?.title || "";
-        const isDisabled = disabledTitlesRef.current.includes(title);
+        const isDisabled =
+          disabledTitlesRef.current.includes(title) || !isWalkModeRef.current;
 
         newKeys.add(key);
 
@@ -1376,7 +1388,61 @@ const Map3D = () => {
           </div>
         </div>
       )}
-
+      {!isWalkMode ? (
+        // ✅ 하단 중앙 원형 Start 버튼
+        <button
+          onClick={() => setIsWalkMode(true)}
+          aria-label="산책 시작"
+          style={{
+            position: "absolute",
+            left: "50%",
+            transform: "translateX(-50%)",
+            bottom: 24, // 필요하면 24 대신 더 올리기/내리기
+            zIndex: 1200,
+            width: 64,
+            height: 64,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #00C853 0%, #3A8049 100%)",
+            color: "#fff",
+            border: "none",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+            fontWeight: 800,
+            fontSize: 14,
+            letterSpacing: 0.3,
+            cursor: "pointer",
+          }}
+        >
+          Start
+        </button>
+      ) : (
+        // ▶ 기존처럼 우상단 Stop 버튼 (유지)
+        <button
+          onClick={() => {
+            setIsWalkMode(false);
+            setShowARButton(false);
+            setIsARActive(false);
+            clearRoute();
+            setClosestMarker(null);
+            setNearbyMarkers([]);
+          }}
+          aria-label="산책 종료"
+          style={{
+            position: "absolute",
+            top: 20,
+            right: 20,
+            zIndex: 1200,
+            background: "#555",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "10px 14px",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Stop
+        </button>
+      )}
       {/* 내 위치 버튼 */}
       {userLocation && (
         <button
