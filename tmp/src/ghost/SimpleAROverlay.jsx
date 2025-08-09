@@ -52,6 +52,9 @@ export default function SimpleAROverlay({
   const [chestClaimed, setChestClaimed] = useState(false);
   const [chestPoints, setChestPoints] = useState(0);
 
+  // 상자 오픈 애니메이션(이미지+포인트 표시 후 자동 제거)
+  const [chestFx, setChestFx] = useState(null); // { id, reward }
+
   // iOS 센서 권한 버튼 노출
   const [needMotionPerm, setNeedMotionPerm] = useState(false);
 
@@ -338,6 +341,7 @@ export default function SimpleAROverlay({
     setChestPoints(0);
     setResultOpen(false);
     resultShownRef.current = false;
+    setChestFx(null);
 
     if (resultTimerRef.current) clearTimeout(resultTimerRef.current);
     resultTimerRef.current = setTimeout(openResult, 20000);
@@ -478,7 +482,7 @@ export default function SimpleAROverlay({
     }
   };
 
-  // 보물상자 클릭: 500~3000p 랜덤 보상 + Map3D 콜백(1회만)
+  // 보물상자 클릭: 500~3000p 랜덤 보상 + Map3D 콜백(1회만) + 오픈 애니메이션 표시 후 자동 제거
   const handleChestClick = (e) => {
     e.stopPropagation();
     if (chestCooling || chestClaimed) return;
@@ -489,17 +493,12 @@ export default function SimpleAROverlay({
     onBonusPoints?.(reward);
     haptic(60);
 
-    const chestX = 50;
-    const chestY = 100;
-    const id1 = Math.random().toString(36).slice(2);
-    const id2 = Math.random().toString(36).slice(2);
+    // 오픈 이펙트(이미지+포인트) — 하단 중앙 위쪽에 잠깐 표시
+    const id = Math.random().toString(36).slice(2);
+    setChestFx({ id, reward });
+    setTimeout(() => setChestFx(null), 1200); // 애니메이션 종료 후 제거
 
-    setFxList((list) => [...list, { id: id1, x: chestX, y: chestY - 14 }]);
-    setTimeout(() => setFxList((list) => list.filter((f) => f.id !== id1)), 550);
-
-    setPointsFx((list) => [...list, { id: id2, x: chestX, y: chestY - 14, text: `+${reward}p` }]);
-    setTimeout(() => setPointsFx((list) => list.filter((p) => p.id !== id2)), 1000);
-
+    // 쿨다운(버튼 회색 효과 유지)
     setChestCooling(true);
     setTimeout(() => setChestCooling(false), 1200);
   };
@@ -638,6 +637,49 @@ export default function SimpleAROverlay({
         />
       </button>
 
+      {/* ✅ 상자 오픈 애니메이션 (boxopen.png + 보상 포인트) */}
+      {chestFx && (
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            bottom: "calc(110px + env(safe-area-inset-bottom))",
+            transform: "translateX(-50%)",
+            zIndex: 180,
+            pointerEvents: "none",
+            textAlign: "center",
+          }}
+        >
+          <img
+            src="/boxopen.png"
+            alt="opened chest"
+            className="chest-open-pop"
+            draggable="false"
+            style={{
+              width: 110,
+              height: "auto",
+              display: "block",
+              margin: "0 auto",
+              filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.35))",
+              userSelect: "none",
+            }}
+          />
+          <div
+            className="chest-reward-pop"
+            style={{
+              fontWeight: 900,
+              fontSize: 22,
+              color: "#ffd700",
+              textShadow: "0 0 10px rgba(255,215,0,0.9), 0 0 18px rgba(255,215,0,0.6)",
+              marginTop: 6,
+              letterSpacing: 0.5,
+            }}
+          >
+            +{chestFx.reward}p
+          </div>
+        </div>
+      )}
+
       {/* 결과 모달 */}
       {resultOpen && (
         <div
@@ -672,7 +714,7 @@ export default function SimpleAROverlay({
             </div>
 
             <button
-              onClick={onClose} // X 버튼과 동일하게 부모 onClose 호출
+              onClick={onClose}
               style={{
                 width: "100%",
                 height: 44,
@@ -759,6 +801,26 @@ export default function SimpleAROverlay({
         @keyframes chest-bounce {
           0%, 100% { transform: translateX(-50%) translateY(0); }
           50%      { transform: translateX(-50%) translateY(-6px); }
+        }
+
+        /* ✅ 상자 오픈 애니메이션 */
+        @keyframes chest-open-pop {
+          0%   { transform: scale(0.6) translateY(0);   opacity: 0; }
+          25%  { transform: scale(1.05) translateY(-6px); opacity: 1; }
+          70%  { transform: scale(1.0) translateY(-10px); opacity: 1; }
+          100% { transform: scale(0.9) translateY(-16px); opacity: 0; }
+        }
+        @keyframes chest-reward-rise {
+          0%   { transform: translateY(6px); opacity: 0; }
+          20%  { opacity: 1; }
+          70%  { transform: translateY(-6px); opacity: 1; }
+          100% { transform: translateY(-22px); opacity: 0; }
+        }
+        .chest-open-pop {
+          animation: chest-open-pop 1200ms ease-out forwards;
+        }
+        .chest-reward-pop {
+          animation: chest-reward-rise 1200ms ease-out forwards;
         }
       `}</style>
     </div>
