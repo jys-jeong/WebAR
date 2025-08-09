@@ -848,9 +848,9 @@ const Map3D = () => {
         const coordArr = feature.geometry.coordinates;
         const key = coordKey(coordArr);
         const title = feature.properties?.title || "";
-        const isDisabled =
-          disabledTitlesRef.current.includes(title) || !isWalkModeRef.current;
-
+        // ✅ 2) 회색 처리 여부와 클릭 가능 여부를 분리해서 계산
+        const visuallyDisabled = isWalkModeRef.current && disabledTitlesRef.current.includes(title); // 회색 처리 기준 = disabledMarkerTitles
+        const interactive = isWalkModeRef.current && !visuallyDisabled;
         newKeys.add(key);
 
         const existing = domMarkerMap.current.get(key);
@@ -862,7 +862,8 @@ const Map3D = () => {
           root.render(
             <PinMarker
               imageUrl={CONFIG.markerImageUrl}
-              disabled={isDisabled}
+              disabled={visuallyDisabled}
+              interactive={interactive}
               onClick={() => handlePinMarkerClick(coordArr, feature)}
             />
           );
@@ -871,19 +872,27 @@ const Map3D = () => {
             .setLngLat(coordArr)
             .addTo(map.current);
 
-          domMarkerMap.current.set(key, { marker, root, isDisabled, title });
+          domMarkerMap.current.set(key, {
+            marker,
+            root,
+            disabled: visuallyDisabled,
+            interactive,
+            title,
+          });
         } else {
-          // disabled 상태가 바뀌었으면 재렌더
-          if (existing.isDisabled !== isDisabled) {
-            existing.root.render(
-              <PinMarker
-                imageUrl={CONFIG.markerImageUrl}
-                disabled={isDisabled}
-                onClick={() => handlePinMarkerClick(coordArr, feature)}
-              />
-            );
-            existing.isDisabled = isDisabled;
-          }
+          // 기존 마커도 두 값이 바뀌었을 때만 재렌더
+          if (existing.disabled !== visuallyDisabled || existing.interactive !== interactive) {
+          existing.root.render(
+            <PinMarker
+              imageUrl={CONFIG.markerImageUrl}
+              disabled={visuallyDisabled}
+              interactive={interactive}
+              onClick={() => handlePinMarkerClick(coordArr, feature)}
+            />
+          );
+          existing.disabled = visuallyDisabled;
+          existing.interactive = interactive;
+        }
         }
       });
 

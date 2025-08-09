@@ -2,7 +2,7 @@
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faLocationDot } from "@fortawesome/free-solid-svg-icons";
 
-export const PinMarker = ({ imageUrl, disabled, onClick }) => {
+export const PinMarker = ({ imageUrl, disabled, interactive = true,onClick }) => {
   const pinColor = disabled ? "#9E9E9E" : "#3A8049";
   const imgStyle = disabled
     ? {
@@ -19,13 +19,13 @@ export const PinMarker = ({ imageUrl, disabled, onClick }) => {
         position: "relative",
         width: 54,
         height: 70,
-        pointerEvents: disabled ? "none" : "auto", 
+        pointerEvents: interactive ? "auto" : "none",
         display: "flex",
         justifyContent: "center",
         alignItems: "flex-start",
-        cursor: disabled ? "default" : "pointer",
+        cursor: interactive ? (disabled ? "default" : "pointer") : "default",
       }}
-      onClick={disabled ? undefined : onClick}
+      onClick={interactive && !disabled ? onClick : undefined}
     >
       <FontAwesomeIcon
         icon={faLocationDot}
