@@ -4,7 +4,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { createRoot } from "react-dom/client";
 import { PinMarker } from "./PinMarker";
 import SimpleAROverlay from "./ghost/SimpleAROverlay";
-
+import ARButton from "./ARButton";
 // 상수 정의
 export const CONFIG = {
   targetLng: 127.1465,
@@ -1031,96 +1031,7 @@ const Map3D = () => {
 
 
       {/* 조건부 AR 버튼 */}
-      {showARButton && (
-        <button
-          onClick={handleARButtonClick}
-          style={{
-            position: "absolute",
-            left: "50%",
-            transform: "translate(-50%, 0)",
-            bottom: "calc(24px + env(safe-area-inset-bottom))",
-            background: "linear-gradient(180deg, #ffffff 0%, #f3f3f3 100%)",
-            color: "#111",
-            border: "1px solid rgba(0,0,0,0.08)",
-            borderRadius: "50px",
-            padding: "12px 20px",
-            fontSize: "14px",
-            fontWeight: "bold",
-            cursor: "pointer",
-            // 레이어드 섀도우 + 입체감
-            boxShadow:
-              "0 10px 24px rgba(0,0,0,0.20), 0 2px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -2px 0 rgba(0,0,0,0.05)",
-            zIndex: 1200,
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            minWidth: "140px",
-            justifyContent: "center",
-            position: "absolute",
-            overflow: "hidden", // 하이라이트 마스크용
-            willChange: "transform, box-shadow",
-            WebkitTapHighlightColor: "transparent",
-            // 등장 애니메이션 + 펄스
-            animation:
-              "slideUpIn 280ms ease-out both, arButtonPulse 2s infinite 280ms",
-          }}
-          onMouseEnter={(e) => {
-            const el = e.currentTarget;
-            el.style.transform = "translate(-50%, -2px)";
-            el.style.boxShadow =
-              "0 12px 28px rgba(0,0,0,0.24), 0 4px 10px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.95), inset 0 -2px 0 rgba(0,0,0,0.06)";
-          }}
-          onMouseLeave={(e) => {
-            const el = e.currentTarget;
-            el.style.transform = "translate(-50%, 0)";
-            el.style.boxShadow =
-              "0 10px 24px rgba(0,0,0,0.20), 0 2px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -2px 0 rgba(0,0,0,0.05)";
-          }}
-          onMouseDown={(e) => {
-            const el = e.currentTarget;
-            el.style.transform = "translate(-50%, 1px)"; // 눌림
-            el.style.boxShadow =
-              "0 6px 16px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -1px 0 rgba(0,0,0,0.06)";
-            el.style.background =
-              "linear-gradient(180deg, #f7f7f7 0%, #ececec 100%)";
-          }}
-          onMouseUp={(e) => {
-            const el = e.currentTarget;
-            el.style.transform = "translate(-50%, 0)";
-            el.style.boxShadow =
-              "0 10px 24px rgba(0,0,0,0.20), 0 2px 6px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -2px 0 rgba(0,0,0,0.05)";
-            el.style.background =
-              "linear-gradient(180deg, #ffffff 0%, #f3f3f3 100%)";
-          }}
-          onTouchStart={(e) => {
-            const el = e.currentTarget;
-            el.style.transform = "translate(-50%, 1px)";
-          }}
-          onTouchEnd={(e) => {
-            const el = e.currentTarget;
-            el.style.transform = "translate(-50%, 0)";
-          }}
-        >
-          {/* 상단 글로시 하이라이트 (입체감) */}
-          <span
-            aria-hidden
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              height: "55%",
-              background:
-                "linear-gradient(to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0))",
-              borderTopLeftRadius: "50px",
-              borderTopRightRadius: "50px",
-              pointerEvents: "none",
-            }}
-          />
-          <span style={{ fontSize: "16px" }}>📷</span>
-          <span>AR 모드</span>
-        </button>
-      )}
+      {showARButton && <ARButton onClick={handleARButtonClick} />}
       {isWalkMode && (
         <div
           style={{
