@@ -28,11 +28,12 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     movementPatterns,
   } = useGhostGame();
 
-  // ✅ 클릭 이펙트 + 오디오 컨텍스트(진동 대체용)
+  // 클릭 이펙트(링/플래시) + 점수 텍스트(+100p) + 오디오 컨텍스트(햅틱 대체)
   const [fxList, setFxList] = useState([]);
+  const [pointsFx, setPointsFx] = useState([]);
   const audioCtxRef = useRef(null);
 
-  // ✅ 일관된 햅틱 유틸 (vibrate → WebAudio fallback)
+  // 햅틱 유틸: vibrate → WebAudio fallback
   const haptic = (ms = 40) => {
     let ok = false;
     try {
@@ -45,13 +46,13 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       if (!AudioCtx) return;
       if (!audioCtxRef.current) audioCtxRef.current = new AudioCtx();
       const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") ctx.resume(); // iOS 대비
+      if (ctx.state === "suspended") ctx.resume();
 
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "square";
       osc.frequency.setValueAtTime(140, ctx.currentTime);
-      gain.gain.setValueAtTime(0.02, ctx.currentTime); // 아주 작게
+      gain.gain.setValueAtTime(0.02, ctx.currentTime);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
@@ -94,6 +95,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const getProcessedGhost = (ghost) => {
     if (!supported) return ghost;
 
+    // orientation-fixed
     if (ghost.type === "orientation-fixed") {
       const alphaDiff = Math.min(
         Math.abs(orientation.alpha - ghost.targetAlpha),
@@ -105,6 +107,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       return ghost;
     }
 
+    // gps-fixed: 도착(≤1.2m) + 시야각/조준 각도 충족시만 중앙 노출
     if (
       ghost.type === "gps-fixed" &&
       location &&
@@ -259,6 +262,8 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
                 x = Math.max(10, Math.min(90, x + (Math.random() - 0.5) * 25));
                 y = Math.max(10, Math.min(90, y + (Math.random() - 0.5) * 25));
                 break;
+              default:
+                break;
             }
             next[index] = {
               ...next[index],
@@ -279,14 +284,21 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const processedGhosts = ghosts.map((g) => getProcessedGhost(g));
   const fxNum = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
-  // ✅ 유령 클릭: 퇴치 + 햅틱/이펙트
+  // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트
   const handleGhostClick = (idx, pg) => {
-    catchGhost(idx);
+    catchGhost(idx); // 점수 +100은 useGhostGame에서 처리하도록(아래 참고)
     haptic(50);
+
     if (pg?.pos) {
+      // 링/플래시
       const id = Math.random().toString(36).slice(2);
       setFxList((list) => [...list, { id, x: pg.pos.x, y: pg.pos.y }]);
       setTimeout(() => setFxList((list) => list.filter((f) => f.id !== id)), 550);
+
+      // +100p 떠오르기
+      const pid = Math.random().toString(36).slice(2);
+      setPointsFx((list) => [...list, { id: pid, x: pg.pos.x, y: pg.pos.y }]);
+      setTimeout(() => setPointsFx((list) => list.filter((p) => p.id !== pid)), 900);
     }
   };
 
@@ -294,15 +306,15 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "#000", zIndex: 9999 }}>
       <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
 
-      {/* ✅ 유령 레이어를 패널보다 위로 */}
-      <div style={{ position: "absolute", inset: 0, zIndex: 60 /* 패널(20~30)보다 큼 */, pointerEvents: "auto" }}>
+      {/* 유령 레이어(패널보다 위) */}
+      <div style={{ position: "absolute", inset: 0, zIndex: 60, pointerEvents: "auto" }}>
         {processedGhosts.map((pg, i) => {
           if (!pg?.pos || pg.pos.x < 0) return null;
           return <Ghost key={`ghost-${i}`} gh={pg} idx={i} onClick={() => handleGhostClick(i, pg)} />;
         })}
       </div>
 
-      {/* 퇴치 이펙트 (유령 위) */}
+      {/* 퇴치 이펙트 */}
       {fxList.map((f) => (
         <div
           key={f.id}
@@ -320,12 +332,30 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         </div>
       ))}
 
-      {/* 점수 패널: 클릭 패스-스루, 가장 아래 */}
+      {/* +100p 점수 이펙트 */}
+      {pointsFx.map((p) => (
+        <div
+          key={p.id}
+          className="score-fx"
+          style={{
+            position: "absolute",
+            left: `${p.x}%`,
+            top: `${p.y}%`,
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "none",
+            zIndex: 75,
+          }}
+        >
+          +100p
+        </div>
+      ))}
+
+      {/* 점수 패널(클릭 방해 X) */}
       <div style={{ pointerEvents: "none", zIndex: 10 }}>
         <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
       </div>
 
-      {/* ⬅️ 내 정보 패널: 작고 클릭 패스-스루, 유령 아래(z:20) */}
+      {/* ⬅️ 내 정보 패널 (작고 클릭 패스-스루) */}
       <div
         style={{
           position: "absolute",
@@ -350,7 +380,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         <div>γ(Roll): {fxNum(orientation?.gamma, 0)}°</div>
       </div>
 
-      {/* ➡️ 유령 정보 패널: 작고 클릭 패스-스루, 유령 아래(z:30) */}
+      {/* ➡️ 유령 정보 패널 (작고 클릭 패스-스루) */}
       <div
         style={{
           position: "absolute",
@@ -410,7 +440,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         {processedGhosts.length === 0 && <div>유령이 없습니다.</div>}
       </div>
 
-      {/* 닫기: 최상위에 남겨 클릭 가능 */}
+      {/* 닫기 버튼(최상위) */}
       <button
         onClick={onClose}
         style={{
@@ -425,7 +455,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           background: "#FF4444",
           border: "none",
           cursor: "pointer",
-          zIndex: 90, // 유령/이펙트보다 위
+          zIndex: 90,
           pointerEvents: "auto",
         }}
       >
@@ -461,6 +491,20 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           border-radius: 50%;
           background: rgba(255,255,255,0.9);
           animation: fx-flash 220ms ease-out forwards;
+        }
+        @keyframes score-rise {
+          0%   { transform: translate(-50%, -50%) translateY(0);   opacity: 0; }
+          10%  { opacity: 1; }
+          70%  { opacity: 1; }
+          100% { transform: translate(-50%, -50%) translateY(-40px); opacity: 0; }
+        }
+        .score-fx {
+          font-weight: 900;
+          font-size: 20px;
+          color: #ffd700;
+          text-shadow: 0 0 8px rgba(255,215,0,0.9), 0 0 16px rgba(255,215,0,0.6);
+          animation: score-rise 900ms ease-out forwards;
+          letter-spacing: 0.5px;
         }
       `}</style>
     </div>
