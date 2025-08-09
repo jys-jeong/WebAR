@@ -79,9 +79,7 @@ export default function SimpleAROverlay({
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-      setTimeout(() => {
-        try { osc.stop(); } catch {}
-      }, Math.min(120, ms + 60));
+      setTimeout(() => { try { osc.stop(); } catch {} }, Math.min(120, ms + 60));
     } catch {}
   };
 
@@ -134,7 +132,7 @@ export default function SimpleAROverlay({
     return hdg;
   };
 
-  // iOS 센서 권한 버튼 노출 조건 설정
+  // iOS 센서 권한 버튼 노출 조건
   useEffect(() => {
     const need =
       (typeof DeviceMotionEvent !== "undefined" &&
@@ -144,11 +142,10 @@ export default function SimpleAROverlay({
     setNeedMotionPerm(!!need);
   }, []);
 
-  // ⛳ 오버레이가 켜질 때 자동으로 “한 번” 권한 요청 시도
+  // 오버레이가 켜질 때 자동 권한 요청 "시도"
   useEffect(() => {
     if (!isActive) return;
     (async () => {
-      // iOS에서만 의미가 있음 (그리고 보통 사용자 제스처 없으면 거절됨)
       if (
         (typeof DeviceMotionEvent !== "undefined" &&
           typeof DeviceMotionEvent.requestPermission === "function") ||
@@ -165,10 +162,9 @@ export default function SimpleAROverlay({
             const r2 = await DeviceOrientationEvent.requestPermission();
             granted = granted || (r2 === "granted");
           }
-          setNeedMotionPerm(!granted); // 실패하면 버튼 계속 노출
+          setNeedMotionPerm(!granted);
           if (granted) haptic(20);
         } catch {
-          // 사용자 제스처 필요 등의 이유로 실패 → 버튼 노출 유지
           setNeedMotionPerm(true);
         }
       }
@@ -208,7 +204,7 @@ export default function SimpleAROverlay({
       return ghost;
     }
 
-    // gps-fixed: 도착(≤1.2m) + 시야각/조준 각도
+    // gps-fixed: ★ 거리와 상관없이 방위/델타 "항상" 계산해서 패널에 표기되게 함
     if (ghost.type === "gps-fixed" && location) {
       const distance = calculateDistance(
         location.latitude,
@@ -217,29 +213,10 @@ export default function SimpleAROverlay({
         ghost.gpsLon
       );
 
-      if (distance > ARRIVE_RADIUS_M) {
-        return {
-          ...ghost,
-          pos: { x: -100, y: -100 },
-          currentDistance: distance,
-          reason: `도착 필요 (${(distance - ARRIVE_RADIUS_M).toFixed(1)}m 남음)`,
-        };
-        }
-
-      // 방위: useCompass.heading → 없으면 alpha로 추정
       const fallbackHeading = computeHeadingFromAlpha();
       const cameraBearing = Number.isFinite(compass?.heading)
         ? compass.heading
         : (Number.isFinite(fallbackHeading) ? fallbackHeading : null);
-
-      if (!Number.isFinite(cameraBearing)) {
-        return {
-          ...ghost,
-          pos: { x: -100, y: -100 },
-          currentDistance: distance,
-          reason: "방위(나침반/알파) 없음",
-        };
-      }
 
       const ghostBearing = calculateBearing(
         location.latitude,
@@ -247,8 +224,38 @@ export default function SimpleAROverlay({
         ghost.gpsLat,
         ghost.gpsLon
       );
-      const delta = angleDelta(ghostBearing, cameraBearing);
 
+      const delta = Number.isFinite(cameraBearing)
+        ? angleDelta(ghostBearing, cameraBearing)
+        : null;
+
+      // 1) 아직 도착 반경 밖
+      if (distance > ARRIVE_RADIUS_M) {
+        return {
+          ...ghost,
+          pos: { x: -100, y: -100 },
+          currentDistance: distance,
+          ghostBearing,
+          cameraBearing,
+          deltaToCamera: delta,
+          reason: `도착 필요 (${(distance - ARRIVE_RADIUS_M).toFixed(1)}m 남음)`,
+        };
+      }
+
+      // 2) 방위 없음
+      if (!Number.isFinite(cameraBearing)) {
+        return {
+          ...ghost,
+          pos: { x: -100, y: -100 },
+          currentDistance: distance,
+          ghostBearing,
+          cameraBearing,
+          deltaToCamera: delta,
+          reason: "방위(나침반/알파) 없음",
+        };
+      }
+
+      // 3) 시야각 밖
       if (delta > CAMERA_FOV_DEG / 2) {
         return {
           ...ghost,
@@ -261,6 +268,7 @@ export default function SimpleAROverlay({
         };
       }
 
+      // 4) 미조준
       if (delta > AIM_TOLERANCE_DEG) {
         return {
           ...ghost,
@@ -273,7 +281,7 @@ export default function SimpleAROverlay({
         };
       }
 
-      // 도착+조준 성공 → 중앙 표시
+      // 5) 도착+조준 성공 → 중앙 표시
       const screenX = 50;
       const screenY = 50;
       const sizeScaleRaw = 50 / Math.max(distance, 0.5);
@@ -525,8 +533,10 @@ export default function SimpleAROverlay({
                 <>
                   <div>📍 {fxNum(g.gpsLat, 6)}, {fxNum(g.gpsLon, 6)}</div>
                   <div style={{ fontWeight: 800 }}>📏 거리: {fxNum(pg.currentDistance, 1)} m</div>
-                  <div>🧭 방위: {fxNum(pg.ghostBearing, 0)}°</div>
+                  <div>🧭 방위(목표): {fxNum(pg.ghostBearing, 0)}°</div>
+                  <div>🧭 방위(카메라): {fxNum(pg.cameraBearing, 0)}°</div>
                   <div>Δ: {fxNum(pg.deltaToCamera, 0)}°</div>
+                  {pg.reason && <div style={{ opacity: 0.8 }}>• {pg.reason}</div>}
                 </>
               )}
 
@@ -631,7 +641,7 @@ export default function SimpleAROverlay({
           left: 50%;
           top: 50%;
           width: 24px;
-          height: 24px; /* ← %에서 px로 수정 */
+          height: 24px;
           transform: translate(-50%, -50%);
           border-radius: 50%;
           background: rgba(255,255,255,0.9);
@@ -658,4 +668,8 @@ export default function SimpleAROverlay({
       `}</style>
     </div>
   );
+}
+
+function fxNum(v, d = 0) {
+  return Number.isFinite(v) ? v.toFixed(d) : "—";
 }
