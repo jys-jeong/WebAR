@@ -5,13 +5,29 @@ import useDeviceOrientation from "./useDeviceOrientation";
 import useGeoLocation from "./useGeoLocation";
 import useCompass from "./useCompass";
 import Ghost from "./Ghost";
-import ScorePanel from "./ScorePanel";
 
+// 도착/조준 기준
 const ARRIVE_RADIUS_M = 1.2;
 const AIM_TOLERANCE_DEG = 6;
 const CAMERA_FOV_DEG = 60;
 
-export default function SimpleAROverlay({ isActive, onClose, markerData }) {
+/**
+ * props:
+ * - isActive: 오버레이 on/off
+ * - onClose: 닫기 핸들러
+ * - markerData: { coords: [lng, lat] }
+ * - onDefeatedDelta?: (inc: number) => void  // 유령 잡을 때마다 +1
+ * - onBonusPoints?: (p: number) => void      // 보물상자 포인트
+ * - onAllGhostsCleared?: () => void          // 전부 퇴치시 1회 알림(옵션)
+ */
+export default function SimpleAROverlay({
+  isActive,
+  onClose,
+  markerData,
+  onDefeatedDelta,
+  onBonusPoints,
+  onAllGhostsCleared,
+}) {
   const videoRef = useRef(null);
 
   const { orientation, supported } = useDeviceOrientation();
@@ -21,19 +37,26 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const {
     ghosts,
     setGhosts,
-    score,
-    totalCaught,
     resetGame,
     catchGhost,
     movementPatterns,
   } = useGhostGame();
 
-  // 클릭 이펙트(링/플래시) + 점수 텍스트(+100p) + 오디오 컨텍스트(햅틱 대체)
+  // 클릭 이펙트(링/플래시) + 점수 텍스트 이펙트 + 오디오 컨텍스트(햅틱 대체)
   const [fxList, setFxList] = useState([]);
   const [pointsFx, setPointsFx] = useState([]);
   const audioCtxRef = useRef(null);
 
-  // 햅틱 유틸: vibrate → WebAudio fallback
+  // 보물상자 상태
+  const [chestCooling, setChestCooling] = useState(false);
+
+  // iOS 센서 권한 버튼 노출
+  const [needMotionPerm, setNeedMotionPerm] = useState(false);
+
+  // HTTPS 체크(정보용)
+  const isSecure = typeof window !== "undefined" && window.isSecureContext;
+
+  // 햅틱: vibrate → WebAudio fallback
   const haptic = (ms = 40) => {
     let ok = false;
     try {
@@ -51,19 +74,18 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "square";
-      osc.frequency.setValueAtTime(140, ctx.currentTime);
+      osc.frequency.setValueAtTime(160, ctx.currentTime);
       gain.gain.setValueAtTime(0.02, ctx.currentTime);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-
       setTimeout(() => {
         try { osc.stop(); } catch {}
       }, Math.min(120, ms + 60));
     } catch {}
   };
 
-  // --- geo utils ---
+  // --- geo/orientation utils ---
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
     const R = 6371000;
     const toRad = (deg) => (deg * Math.PI) / 180;
@@ -74,6 +96,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
+
   const calculateBearing = (lat1, lon1, lat2, lon2) => {
     const toRad = (deg) => (deg * Math.PI) / 180;
     const toDeg = (rad) => (rad * 180) / Math.PI;
@@ -87,16 +110,69 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     let bearing = toDeg(Math.atan2(y, x));
     return (bearing + 360) % 360;
   };
+
   const angleDelta = (a, b) => {
     let d = Math.abs(a - b);
     return d > 180 ? 360 - d : d;
   };
 
+  // 화면 회전 각도(0/90/180/270)
+  const getScreenAngle = () => {
+    try {
+      if (window.screen?.orientation?.angle != null) return window.screen.orientation.angle;
+      // iOS 구형
+      if (typeof window.orientation === "number") return window.orientation;
+    } catch {}
+    return 0;
+  };
+
+  // 나침반 대체 계산: alpha(0~360)로 heading 추정 (시계방향, 화면 각도 보정)
+  const computeHeadingFromAlpha = () => {
+    const a = orientation?.alpha;
+    if (!Number.isFinite(a)) return null;
+    let hdg = (360 - a + getScreenAngle()) % 360;
+    if (hdg < 0) hdg += 360;
+    return hdg;
+  };
+
+  // iOS 센서 권한 버튼 노출 조건 설정
+  useEffect(() => {
+    const need =
+      (typeof DeviceMotionEvent !== "undefined" &&
+        typeof DeviceMotionEvent.requestPermission === "function") ||
+      (typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function");
+    setNeedMotionPerm(!!need);
+  }, []);
+
+  // iOS 권한 요청
+  const requestMotionPermissions = async () => {
+    try {
+      let granted = false;
+      if (typeof DeviceMotionEvent !== "undefined" &&
+          typeof DeviceMotionEvent.requestPermission === "function") {
+        const r = await DeviceMotionEvent.requestPermission();
+        granted = granted || (r === "granted");
+      }
+      if (typeof DeviceOrientationEvent !== "undefined" &&
+          typeof DeviceOrientationEvent.requestPermission === "function") {
+        const r2 = await DeviceOrientationEvent.requestPermission();
+        granted = granted || (r2 === "granted");
+      }
+      setNeedMotionPerm(!granted);
+      if (granted) haptic(30);
+    } catch {
+      // 실패해도 UI만 닫지 않음
+    }
+  };
+
   const getProcessedGhost = (ghost) => {
-    if (!supported) return ghost;
+    // ❌ 예전처럼 supported가 false라고 전체를 early-return 하지 않음
+    // orientation-fixed만 supported 필요
 
     // orientation-fixed
     if (ghost.type === "orientation-fixed") {
+      if (!supported) return { ...ghost, pos: { x: -100, y: -100 }, reason: "센서 미지원/미허용" };
       const alphaDiff = Math.min(
         Math.abs(orientation.alpha - ghost.targetAlpha),
         360 - Math.abs(orientation.alpha - ghost.targetAlpha)
@@ -107,12 +183,10 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       return ghost;
     }
 
-    // gps-fixed: 도착(≤1.2m) + 시야각/조준 각도 충족시만 중앙 노출
+    // gps-fixed: 도착(≤1.2m) + 시야각/조준 각도
     if (
       ghost.type === "gps-fixed" &&
-      location &&
-      compass &&
-      Number.isFinite(compass.heading)
+      location
     ) {
       const distance = calculateDistance(
         location.latitude,
@@ -130,13 +204,27 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         };
       }
 
+      // 방위: useCompass.heading → 없으면 alpha로 추정
+      const fallbackHeading = computeHeadingFromAlpha();
+      const cameraBearing = Number.isFinite(compass?.heading)
+        ? compass.heading
+        : (Number.isFinite(fallbackHeading) ? fallbackHeading : null);
+
+      if (!Number.isFinite(cameraBearing)) {
+        return {
+          ...ghost,
+          pos: { x: -100, y: -100 },
+          currentDistance: distance,
+          reason: "방위(나침반/알파) 없음",
+        };
+      }
+
       const ghostBearing = calculateBearing(
         location.latitude,
         location.longitude,
         ghost.gpsLat,
         ghost.gpsLon
       );
-      const cameraBearing = compass.heading;
       const delta = angleDelta(ghostBearing, cameraBearing);
 
       if (delta > CAMERA_FOV_DEG / 2) {
@@ -163,7 +251,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         };
       }
 
-      // 도착+조준 → 중앙 표시
+      // 도착+조준 성공 → 중앙 표시
       const screenX = 50;
       const screenY = 50;
       const sizeScaleRaw = 50 / Math.max(distance, 0.5);
@@ -185,7 +273,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     return ghost;
   };
 
-  // 기본 세팅
+  // 초기화
   useEffect(() => {
     if (!isActive) return;
     if (location) resetGame(location);
@@ -228,7 +316,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     });
   }, [isActive, markerData, setGhosts]);
 
-  // camera
+  // 카메라
   useEffect(() => {
     if (!isActive) return;
     navigator.mediaDevices
@@ -279,6 +367,17 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     return () => { timers.forEach(clearInterval); };
   }, [isActive, ghosts.length, movementPatterns, setGhosts]);
 
+  // 전부 퇴치되었을 때 1회 알림(옵션)
+  const clearedRef = useRef(false);
+  useEffect(() => {
+    if (!isActive) { clearedRef.current = false; return; }
+    if (ghosts.length === 0 && !clearedRef.current) {
+      clearedRef.current = true;
+      onAllGhostsCleared?.();
+    }
+    if (ghosts.length > 0) clearedRef.current = false;
+  }, [ghosts.length, isActive, onAllGhostsCleared]);
+
   if (!isActive) return null;
 
   const processedGhosts = ghosts.map((g) => getProcessedGhost(g));
@@ -286,27 +385,73 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
 
   // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트
   const handleGhostClick = (idx, pg) => {
-    catchGhost(idx); // 점수 +100은 useGhostGame에서 처리하도록(아래 참고)
+    catchGhost(idx);
+    onDefeatedDelta?.(1);
     haptic(50);
 
     if (pg?.pos) {
-      // 링/플래시
       const id = Math.random().toString(36).slice(2);
       setFxList((list) => [...list, { id, x: pg.pos.x, y: pg.pos.y }]);
       setTimeout(() => setFxList((list) => list.filter((f) => f.id !== id)), 550);
 
-      // +100p 떠오르기
       const pid = Math.random().toString(36).slice(2);
-      setPointsFx((list) => [...list, { id: pid, x: pg.pos.x, y: pg.pos.y }]);
+      setPointsFx((list) => [...list, { id: pid, x: pg.pos.x, y: pg.pos.y, text: "+100p" }]);
       setTimeout(() => setPointsFx((list) => list.filter((p) => p.id !== pid)), 900);
     }
+  };
+
+  // 보물상자 클릭: 500~3000p 랜덤 보상 + Map3D 콜백
+  const handleChestClick = (e) => {
+    e.stopPropagation();
+    if (chestCooling) return;
+
+    const reward = Math.floor(Math.random() * (3000 - 500 + 1)) + 500;
+    onBonusPoints?.(reward);
+    haptic(60);
+
+    const chestX = 50;
+    const chestY = 100;
+    const id1 = Math.random().toString(36).slice(2);
+    const id2 = Math.random().toString(36).slice(2);
+
+    setFxList((list) => [...list, { id: id1, x: chestX, y: chestY - 14 }]);
+    setTimeout(() => setFxList((list) => list.filter((f) => f.id !== id1)), 550);
+
+    setPointsFx((list) => [...list, { id: id2, x: chestX, y: chestY - 14, text: `+${reward}p` }]);
+    setTimeout(() => setPointsFx((list) => list.filter((p) => p.id !== id2)), 1000);
+
+    setChestCooling(true);
+    setTimeout(() => setChestCooling(false), 1200);
   };
 
   return (
     <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "#000", zIndex: 9999 }}>
       <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
 
-      {/* 유령 레이어(패널보다 위) */}
+      {/* iOS 센서 권한 버튼 */}
+      {needMotionPerm && (
+        <button
+          onClick={requestMotionPermissions}
+          style={{
+            position: "absolute",
+            top: "calc(18px + env(safe-area-inset-top))",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 120,
+            padding: "10px 14px",
+            borderRadius: 999,
+            border: "none",
+            background: "#3A8049",
+            color: "#fff",
+            fontWeight: 800,
+            letterSpacing: 0.2,
+            boxShadow: "0 6px 14px rgba(0,0,0,0.25)",
+            cursor: "pointer",
+          }}
+        >센서 허용</button>
+      )}
+
+      {/* 유령 레이어 */}
       <div style={{ position: "absolute", inset: 0, zIndex: 60, pointerEvents: "auto" }}>
         {processedGhosts.map((pg, i) => {
           if (!pg?.pos || pg.pos.x < 0) return null;
@@ -314,91 +459,33 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         })}
       </div>
 
-      {/* 퇴치 이펙트 */}
+      {/* 이펙트 */}
       {fxList.map((f) => (
-        <div
-          key={f.id}
-          style={{
-            position: "absolute",
-            left: `${f.x}%`,
-            top: `${f.y}%`,
-            transform: "translate(-50%, -50%)",
-            pointerEvents: "none",
-            zIndex: 70,
-          }}
-        >
+        <div key={f.id} style={{ position: "absolute", left: `${f.x}%`, top: `${f.y}%`, transform: "translate(-50%, -50%)", pointerEvents: "none", zIndex: 70 }}>
           <div className="fx-ring" />
           <div className="fx-flash" />
         </div>
       ))}
-
-      {/* +100p 점수 이펙트 */}
       {pointsFx.map((p) => (
-        <div
-          key={p.id}
-          className="score-fx"
-          style={{
-            position: "absolute",
-            left: `${p.x}%`,
-            top: `${p.y}%`,
-            transform: "translate(-50%, -50%)",
-            pointerEvents: "none",
-            zIndex: 75,
-          }}
-        >
-          +100p
+        <div key={p.id} className="score-fx" style={{ position: "absolute", left: `${p.x}%`, top: `${p.y}%`, transform: "translate(-50%, -50%)", pointerEvents: "none", zIndex: 75 }}>
+          {p.text || "+100p"}
         </div>
       ))}
 
-      {/* 점수 패널(클릭 방해 X) */}
-      <div style={{ pointerEvents: "none", zIndex: 10 }}>
-        <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
-      </div>
-
-      {/* ⬅️ 내 정보 패널 (작고 클릭 패스-스루) */}
-      <div
-        style={{
-          position: "absolute",
-          top: 100,
-          left: 20,
-          background: "rgba(0,0,0,0.8)",
-          color: "white",
-          padding: "10px 12px",
-          borderRadius: "8px",
-          fontSize: "11px",
-          zIndex: 20,
-          minWidth: 160,
-          maxWidth: 200,
-          pointerEvents: "none",
-        }}
-      >
+      {/* ⬅️ 내 정보 패널 */}
+      <div style={{ position: "absolute", top: 100, left: 20, background: "rgba(0,0,0,0.8)", color: "white", padding: "10px 12px", borderRadius: "8px", fontSize: "11px", zIndex: 20, minWidth: 160, maxWidth: 200, pointerEvents: "none" }}>
         <div style={{ color: "#4CAF50", fontWeight: 800, marginBottom: 6 }}>🧍 내 정보</div>
+        {!isSecure && <div style={{ color: "#ffb300", marginBottom: 4 }}>⚠ HTTPS 아님</div>}
         {location && <div style={{ marginBottom: 4 }}>📍 {fxNum(location.latitude, 6)}, {fxNum(location.longitude, 6)}</div>}
-        <div>🧭 Heading: {fxNum(compass?.heading, 0)}°</div>
+        <div>🧭 Heading(hook): {fxNum(compass?.heading, 0)}°</div>
+        <div>🧭 Heading(alpha→보정): {fxNum(computeHeadingFromAlpha(), 0)}°</div>
         <div>α(Yaw): {fxNum(orientation?.alpha, 0)}°</div>
         <div>β(Pitch): {fxNum(orientation?.beta, 0)}°</div>
         <div>γ(Roll): {fxNum(orientation?.gamma, 0)}°</div>
       </div>
 
-      {/* ➡️ 유령 정보 패널 (작고 클릭 패스-스루) */}
-      <div
-        style={{
-          position: "absolute",
-          top: 100,
-          right: 20,
-          maxHeight: "60vh",
-          overflowY: "auto",
-          background: "rgba(0,0,0,0.8)",
-          color: "white",
-          padding: "10px 12px",
-          borderRadius: "8px",
-          fontSize: "11px",
-          zIndex: 30,
-          minWidth: 160,
-          maxWidth: 200,
-          pointerEvents: "none",
-        }}
-      >
+      {/* ➡️ 유령 정보 패널 */}
+      <div style={{ position: "absolute", top: 100, right: 20, maxHeight: "60vh", overflowY: "auto", background: "rgba(0,0,0,0.8)", color: "white", padding: "10px 12px", borderRadius: "8px", fontSize: "11px", zIndex: 30, minWidth: 160, maxWidth: 200, pointerEvents: "none" }}>
         <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: 6 }}>👻 유령</div>
         {processedGhosts.map((pg, i) => {
           const g = ghosts[i];
@@ -439,6 +526,42 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         })}
         {processedGhosts.length === 0 && <div>유령이 없습니다.</div>}
       </div>
+
+      {/* ⭐ 보물상자 — 항상 화면에 보임 (하단 중앙) */}
+      <button
+        onClick={handleChestClick}
+        aria-label="Treasure Chest"
+        style={{
+          position: "absolute",
+          left: "50%",
+          bottom: "calc(26px + env(safe-area-inset-bottom))",
+          transform: "translateX(-50%)",
+          width: 72,
+          height: 72,
+          borderRadius: 16,
+          border: "none",
+          background: "transparent",
+          padding: 0,
+          cursor: chestCooling ? "default" : "pointer",
+          zIndex: 85,
+          pointerEvents: "auto",
+        }}
+        disabled={chestCooling}
+      >
+        <img
+          src="/box.png"
+          alt="treasure box"
+          draggable="false"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            filter: chestCooling ? "grayscale(0.4) brightness(0.9)" : "none",
+            animation: chestCooling ? "none" : "chest-bounce 1500ms ease-in-out infinite",
+            userSelect: "none",
+          }}
+        />
+      </button>
 
       {/* 닫기 버튼(최상위) */}
       <button
@@ -486,7 +609,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           left: 50%;
           top: 50%;
           width: 24px;
-          height: 24px;
+          height: 24%;
           transform: translate(-50%, -50%);
           border-radius: 50%;
           background: rgba(255,255,255,0.9);
@@ -505,6 +628,10 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           text-shadow: 0 0 8px rgba(255,215,0,0.9), 0 0 16px rgba(255,215,0,0.6);
           animation: score-rise 900ms ease-out forwards;
           letter-spacing: 0.5px;
+        }
+        @keyframes chest-bounce {
+          0%, 100% { transform: translateX(-50%) translateY(0); }
+          50%      { transform: translateX(-50%) translateY(-6px); }
         }
       `}</style>
     </div>
