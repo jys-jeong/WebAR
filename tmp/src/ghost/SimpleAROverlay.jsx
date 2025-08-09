@@ -49,12 +49,30 @@ export default function SimpleAROverlay({
 
   // 보물상자 상태
   const [chestCooling, setChestCooling] = useState(false);
+  const [chestClaimed, setChestClaimed] = useState(false);
+  const [chestPoints, setChestPoints] = useState(0);
 
   // iOS 센서 권한 버튼 노출
   const [needMotionPerm, setNeedMotionPerm] = useState(false);
 
   // HTTPS 체크(정보용)
   const isSecure = typeof window !== "undefined" && window.isSecureContext;
+
+  // 세션 집계 + 결과 모달
+  const [sessionCaught, setSessionCaught] = useState(0);
+  const [resultOpen, setResultOpen] = useState(false);
+  const resultTimerRef = useRef(null);
+  const resultShownRef = useRef(false);
+
+  const openResult = () => {
+    if (resultShownRef.current) return;
+    resultShownRef.current = true;
+    setResultOpen(true);
+    if (resultTimerRef.current) {
+      clearTimeout(resultTimerRef.current);
+      resultTimerRef.current = null;
+    }
+  };
 
   // 햅틱: vibrate → WebAudio fallback
   const haptic = (ms = 40) => {
@@ -311,6 +329,27 @@ export default function SimpleAROverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
 
+  // 세션 리셋 + 20초 결과 타이머
+  useEffect(() => {
+    if (!isActive) return;
+
+    setSessionCaught(0);
+    setChestClaimed(false);
+    setChestPoints(0);
+    setResultOpen(false);
+    resultShownRef.current = false;
+
+    if (resultTimerRef.current) clearTimeout(resultTimerRef.current);
+    resultTimerRef.current = setTimeout(openResult, 20000);
+
+    return () => {
+      if (resultTimerRef.current) {
+        clearTimeout(resultTimerRef.current);
+        resultTimerRef.current = null;
+      }
+    };
+  }, [isActive]);
+
   // 마커 주변 1m 배치
   useEffect(() => {
     if (!isActive || !markerData?.coords) return;
@@ -408,14 +447,23 @@ export default function SimpleAROverlay({
     if (ghosts.length > 0) clearedRef.current = false;
   }, [ghosts.length, isActive, onAllGhostsCleared]);
 
+  // 모든 유령(=0) + 상자 클릭 완료시 즉시 결과
+  useEffect(() => {
+    if (!isActive || resultShownRef.current) return;
+    const allGhostsCleared = ghosts.length === 0;
+    if (allGhostsCleared && chestClaimed) {
+      openResult();
+    }
+  }, [ghosts.length, chestClaimed, isActive]);
+
   if (!isActive) return null;
 
   const processedGhosts = ghosts.map((g) => getProcessedGhost(g));
-  const fxNum = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
   // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트
   const handleGhostClick = (idx, pg) => {
     catchGhost(idx);
+    setSessionCaught((n) => n + 1);
     onDefeatedDelta?.(1);
     haptic(50);
 
@@ -430,12 +478,14 @@ export default function SimpleAROverlay({
     }
   };
 
-  // 보물상자 클릭: 500~3000p 랜덤 보상 + Map3D 콜백
+  // 보물상자 클릭: 500~3000p 랜덤 보상 + Map3D 콜백(1회만)
   const handleChestClick = (e) => {
     e.stopPropagation();
-    if (chestCooling) return;
+    if (chestCooling || chestClaimed) return;
 
     const reward = Math.floor(Math.random() * (3000 - 500 + 1)) + 500;
+    setChestClaimed(true);
+    setChestPoints(reward);
     onBonusPoints?.(reward);
     haptic(60);
 
@@ -546,13 +596,6 @@ export default function SimpleAROverlay({
                   <div>현재 α/β: {fxNum(orientation?.alpha, 0)}° / {fxNum(orientation?.beta, 0)}°</div>
                 </>
               )}
-
-              {g.type === "always-visible" && (
-                <>
-                  <div>화면: {fxNum(pg.pos?.x, 0)}%, {fxNum(pg.pos?.y, 0)}%</div>
-                  <div>크기: {Math.round(pg.size || 0)}</div>
-                </>
-              )}
             </div>
           );
         })}
@@ -574,11 +617,11 @@ export default function SimpleAROverlay({
           border: "none",
           background: "transparent",
           padding: 0,
-          cursor: chestCooling ? "default" : "pointer",
+          cursor: (chestCooling || chestClaimed) ? "default" : "pointer",
           zIndex: 85,
           pointerEvents: "auto",
         }}
-        disabled={chestCooling}
+        disabled={chestCooling || chestClaimed}
       >
         <img
           src="/box.png"
@@ -588,12 +631,64 @@ export default function SimpleAROverlay({
             width: "100%",
             height: "100%",
             objectFit: "contain",
-            filter: chestCooling ? "grayscale(0.4) brightness(0.9)" : "none",
-            animation: chestCooling ? "none" : "chest-bounce 1500ms ease-in-out infinite",
+            filter: (chestCooling || chestClaimed) ? "grayscale(0.5) brightness(0.9)" : "none",
+            animation: (chestCooling || chestClaimed) ? "none" : "chest-bounce 1500ms ease-in-out infinite",
             userSelect: "none",
           }}
         />
       </button>
+
+      {/* 결과 모달 */}
+      {resultOpen && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            zIndex: 200,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "auto",
+          }}
+        >
+          <div
+            style={{
+              width: "min(320px, 86%)",
+              background: "#fff",
+              borderRadius: 14,
+              boxShadow: "0 12px 32px rgba(0,0,0,0.35)",
+              padding: "18px 16px",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 10 }}>결과</div>
+
+            <div style={{ marginBottom: 8, fontSize: 14 }}>
+              잡은 유령 수: <b>{sessionCaught}</b>
+            </div>
+            <div style={{ marginBottom: 14, fontSize: 14 }}>
+              보물상자 포인트: <b>{chestPoints}</b>p
+            </div>
+
+            <button
+              onClick={onClose} // X 버튼과 동일하게 부모 onClose 호출
+              style={{
+                width: "100%",
+                height: 44,
+                borderRadius: 10,
+                border: "none",
+                fontWeight: 800,
+                background: "#3A8049",
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              나가기
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 닫기 버튼(최상위) */}
       <button
