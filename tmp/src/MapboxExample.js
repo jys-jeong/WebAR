@@ -1411,7 +1411,7 @@ const Map3D = () => {
           </div>
         </div>
       )} */}
-      {!isWalkMode ? (
+      {!isWalkMode && (
         // ✅ 하단 중앙 원형 Start 버튼
         <button
           onClick={() => setIsWalkMode(true)}
@@ -1425,7 +1425,7 @@ const Map3D = () => {
             width: 64,
             height: 64,
             borderRadius: "50%",
-            background: "linear-gradient(135deg, #00C853 0%, #3A8049 100%)",
+            background: "#3A8049",
             color: "#fff",
             border: "none",
             boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
@@ -1436,34 +1436,6 @@ const Map3D = () => {
           }}
         >
           Start
-        </button>
-      ) : (
-        // ▶ 기존처럼 우상단 Stop 버튼 (유지)
-        <button
-          onClick={() => {
-            setIsWalkMode(false);
-            setShowARButton(false);
-            setIsARActive(false);
-            clearRoute();
-            setClosestMarker(null);
-            setNearbyMarkers([]);
-          }}
-          aria-label="산책 종료"
-          style={{
-            position: "absolute",
-            top: 20,
-            right: 20,
-            zIndex: 1200,
-            background: "#555",
-            color: "#fff",
-            border: "none",
-            borderRadius: 8,
-            padding: "10px 14px",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          Stop
         </button>
       )}
       {/* 내 위치 버튼 */}
