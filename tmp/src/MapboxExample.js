@@ -605,6 +605,16 @@ const Map3D = () => {
         mobileLog(`route req #${myId}: stale 응답, 그리기 스킵`, "warning");
         return;
       }
+      // 혹시 남아 있을지 모를 이전 라인/소스 완전 정리(안전빵)
+      try {
+        safeRemoveSourceAndLayers("walk-route");
+      } catch {}
+      try {
+        if (map.current.getLayer("walk-route"))
+          map.current.removeLayer("walk-route");
+        if (map.current.getSource("walk-route"))
+          map.current.removeSource("walk-route");
+      } catch {}
 
       const routeData = data.routes[0];
       const routeCoords = routeData.geometry.coordinates;
@@ -688,6 +698,8 @@ const Map3D = () => {
   // ✅ 마커 클릭 핸들러 (마커 유지 버전)
   const handlePinMarkerClick = (coords, feature) => {
     if (!isWalkMode) return;
+
+    clearRoute();
     mobileLog(
       `마커 클릭됨: [${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}]`,
       "info"
@@ -960,7 +972,6 @@ const Map3D = () => {
       map.current.on("sourcedata", handleSourceData);
 
       // cleanup 안 (map.current가 있을 때)
-      map.current.off("sourcedata", handleSourceData);
       const layers = map.current.getStyle().layers;
       const labelLayerId = layers.find(
         (layer) =>
