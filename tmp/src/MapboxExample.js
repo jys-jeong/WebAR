@@ -142,8 +142,11 @@ const Map3D = () => {
   // 모바일 디버깅용 state
   const [debugInfo, setDebugInfo] = useState([]);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
-
-
+  const disabledTitlesRef = useRef([]);
+  useEffect(() => {
+    disabledTitlesRef.current = disabledMarkerTitles;
+    updateDOMMarkers(); // 비활성 목록 바뀌면 마커 스타일 갱신
+  }, [disabledMarkerTitles]);
   // 모바일용 로그 함수
   const mobileLog = (message, type = "info") => {
     const timestamp = new Date().toLocaleTimeString();
@@ -526,10 +529,28 @@ const Map3D = () => {
         watchId.current = null;
       }
 
-      domMarkerMap.current.forEach((marker) => marker.remove());
+      // DOM 마커 정리: marker 제거 + React root 언마운트
+      domMarkerMap.current.forEach((rec) => {
+        // 새 구조: { marker, root, ... }
+        if (rec?.marker) rec.marker.remove();
+        // 예전 구조: Marker 인스턴스를 직접 저장했을 때
+        else if (rec?.remove) rec.remove();
+        // React root 언마운트
+        if (rec?.root) rec.root.unmount();
+      });
       domMarkerMap.current.clear();
 
+      // (옵션) 이벤트/컨트롤 정리 – map.remove()가 대부분 처리하지만 안전빵으로
       if (map.current) {
+        try {
+          map.current.off("click", "clusters", handleClusterClick);
+          ["move", "zoom", "idle"].forEach((ev) =>
+            map.current.off(ev, updateDOMMarkers)
+          );
+          if (geolocateControl.current) {
+            map.current.removeControl(geolocateControl.current);
+          }
+        } catch (e) {}
         map.current.remove();
         map.current = null;
       }
@@ -538,7 +559,6 @@ const Map3D = () => {
       mobileLog("지도 컴포넌트 정리 완료", "info");
     };
   }, []);
-
 
   // 고정 위치 기반 길찾기 함수
   const getRouteWithFixedLocation = async (fixedStartLocation, end) => {
@@ -804,7 +824,6 @@ const Map3D = () => {
       });
   };
 
-  // DOM 마커 업데이트
   const updateDOMMarkers = () => {
     if (!map.current?.getSource("markers")) return;
 
@@ -817,14 +836,21 @@ const Map3D = () => {
       singlePoints.forEach((feature) => {
         const coordArr = feature.geometry.coordinates;
         const key = coordKey(coordArr);
+        const title = feature.properties?.title || "";
+        const isDisabled = disabledTitlesRef.current.includes(title);
+
         newKeys.add(key);
 
-        if (!domMarkerMap.current.has(key)) {
-          const element = document.createElement("div");
+        const existing = domMarkerMap.current.get(key);
 
-          createRoot(element).render(
+        if (!existing) {
+          const element = document.createElement("div");
+          const root = createRoot(element);
+
+          root.render(
             <PinMarker
               imageUrl={CONFIG.markerImageUrl}
+              disabled={isDisabled}
               onClick={() => handlePinMarkerClick(coordArr, feature)}
             />
           );
@@ -833,13 +859,28 @@ const Map3D = () => {
             .setLngLat(coordArr)
             .addTo(map.current);
 
-          domMarkerMap.current.set(key, marker);
+          domMarkerMap.current.set(key, { marker, root, isDisabled, title });
+        } else {
+          // disabled 상태가 바뀌었으면 재렌더
+          if (existing.isDisabled !== isDisabled) {
+            existing.root.render(
+              <PinMarker
+                imageUrl={CONFIG.markerImageUrl}
+                disabled={isDisabled}
+                onClick={() => handlePinMarkerClick(coordArr, feature)}
+              />
+            );
+            existing.isDisabled = isDisabled;
+          }
         }
       });
 
+      // 제거된 포인트 청소
       Array.from(domMarkerMap.current.keys()).forEach((key) => {
         if (!newKeys.has(key)) {
-          domMarkerMap.current.get(key).remove();
+          const rec = domMarkerMap.current.get(key);
+          rec.marker.remove();
+          rec.root.unmount();
           domMarkerMap.current.delete(key);
         }
       });
@@ -847,7 +888,6 @@ const Map3D = () => {
       mobileLog(`DOM 마커 업데이트 오류: ${error.message}`, "error");
     }
   };
-
   // 안전한 레이어 설정
   const setupMapLayers = () => {
     if (!map.current) return;
@@ -901,10 +941,22 @@ const Map3D = () => {
       map.current.on("mouseleave", "clusters", () => {
         map.current.getCanvas().style.cursor = "";
       });
+      map.current.on("sourcedata", (e) => {
+        if (e.sourceId === "markers" && e.isSourceLoaded) {
+          updateDOMMarkers();
+        }
+      });
+      const handleSourceData = (e) => {
+        if (e.sourceId === "markers" && e.isSourceLoaded) updateDOMMarkers();
+      };
+      map.current.on("sourcedata", handleSourceData);
 
+      // cleanup 안 (map.current가 있을 때)
+      map.current.off("sourcedata", handleSourceData);
       const layers = map.current.getStyle().layers;
       const labelLayerId = layers.find(
-        (layer) => layer.type === "symbol" && layer.layout["text-field"]
+        (layer) =>
+          layer.type === "symbol" && layer.layout && layer.layout["text-field"]
       )?.id;
 
       map.current.addLayer(
@@ -1382,12 +1434,14 @@ const Map3D = () => {
             animation: "arButtonPulse 2s infinite",
           }}
           onMouseEnter={(e) => {
-            e.target.style.transform = "translateY(-2px)";
-            e.target.style.boxShadow = "0 6px 20px rgba(0,0,0,0.3)";
+            const el = e.currentTarget;
+            el.style.transform = "translateY(-2px)";
+            el.style.boxShadow = "0 6px 20px rgba(0,0,0,0.3)";
           }}
           onMouseLeave={(e) => {
-            e.target.style.transform = "translateY(0)";
-            e.target.style.boxShadow = "0 4px 15px rgba(0,0,0,0.2)";
+            const el = e.currentTarget;
+            el.style.transform = "translateY(0)";
+            el.style.boxShadow = "0 4px 15px rgba(0,0,0,0.2)";
           }}
         >
           <span style={{ fontSize: "16px" }}>📷</span>
