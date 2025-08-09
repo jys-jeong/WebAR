@@ -19,16 +19,66 @@ export const CONFIG = {
 const MARKER_CENTER = { lng: 126.82287685, lat: 35.18376162 };
 
 export const EXTRA_MARKERS = [
-  { lng: MARKER_CENTER.lng + 0.0012, lat: MARKER_CENTER.lat + 0.001,  title: "커피마을", description: "향긋한 커피가 있는 곳" },
-  { lng: MARKER_CENTER.lng - 0.0011, lat: MARKER_CENTER.lat - 0.0007, title: "헬스존", description: "건강을 위한 헬스장" },
-  { lng: MARKER_CENTER.lng + 0.0008, lat: MARKER_CENTER.lat - 0.0012, title: "피크닉장", description: "야외 피크닉 명소" },
-  { lng: MARKER_CENTER.lng - 0.0009, lat: MARKER_CENTER.lat + 0.0005, title: "놀이터", description: "아이들이 뛰노는 놀이터" },
-  { lng: MARKER_CENTER.lng + 0.0015, lat: MARKER_CENTER.lat + 0.0006, title: "전망대", description: "넓은 경치를 볼 수 있는 전망대" },
-  { lng: MARKER_CENTER.lng - 0.0013, lat: MARKER_CENTER.lat + 0.0014, title: "사진스팟", description: "인생샷 명소" },
-  { lng: MARKER_CENTER.lng + 0.0006, lat: MARKER_CENTER.lat - 0.0008, title: "문화의 거리", description: "지역 문화 예술 공간" },
-  { lng: MARKER_CENTER.lng - 0.0017, lat: MARKER_CENTER.lat - 0.0004, title: "쉼터", description: "잔디와 벤치가 있는 쉼터" },
-  { lng: MARKER_CENTER.lng + 0.0013, lat: MARKER_CENTER.lat - 0.0005, title: "맛집거리", description: "다양한 음식점이 모인 거리" },
-  { lng: MARKER_CENTER.lng - 0.0004, lat: MARKER_CENTER.lat + 0.0017, title: "산책길", description: "산책과 운동 겸하기 좋은 길" },
+  {
+    lng: MARKER_CENTER.lng + 0.0012,
+    lat: MARKER_CENTER.lat + 0.001,
+    title: "커피마을",
+    description: "향긋한 커피가 있는 곳",
+  },
+  {
+    lng: MARKER_CENTER.lng - 0.0011,
+    lat: MARKER_CENTER.lat - 0.0007,
+    title: "헬스존",
+    description: "건강을 위한 헬스장",
+  },
+  {
+    lng: MARKER_CENTER.lng + 0.0008,
+    lat: MARKER_CENTER.lat - 0.0012,
+    title: "피크닉장",
+    description: "야외 피크닉 명소",
+  },
+  {
+    lng: MARKER_CENTER.lng - 0.0009,
+    lat: MARKER_CENTER.lat + 0.0005,
+    title: "놀이터",
+    description: "아이들이 뛰노는 놀이터",
+  },
+  {
+    lng: MARKER_CENTER.lng + 0.0015,
+    lat: MARKER_CENTER.lat + 0.0006,
+    title: "전망대",
+    description: "넓은 경치를 볼 수 있는 전망대",
+  },
+  {
+    lng: MARKER_CENTER.lng - 0.0013,
+    lat: MARKER_CENTER.lat + 0.0014,
+    title: "사진스팟",
+    description: "인생샷 명소",
+  },
+  {
+    lng: MARKER_CENTER.lng + 0.0006,
+    lat: MARKER_CENTER.lat - 0.0008,
+    title: "문화의 거리",
+    description: "지역 문화 예술 공간",
+  },
+  {
+    lng: MARKER_CENTER.lng - 0.0017,
+    lat: MARKER_CENTER.lat - 0.0004,
+    title: "쉼터",
+    description: "잔디와 벤치가 있는 쉼터",
+  },
+  {
+    lng: MARKER_CENTER.lng + 0.0013,
+    lat: MARKER_CENTER.lat - 0.0005,
+    title: "맛집거리",
+    description: "다양한 음식점이 모인 거리",
+  },
+  {
+    lng: MARKER_CENTER.lng - 0.0004,
+    lat: MARKER_CENTER.lat + 0.0017,
+    title: "산책길",
+    description: "산책과 운동 겸하기 좋은 길",
+  },
 ];
 
 mapboxgl.accessToken = CONFIG.mapboxToken;
@@ -41,8 +91,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
   const Δλ = ((lon2 - lon1) * Math.PI) / 180;
   const a =
-    Math.sin(Δφ / 2) ** 2 +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+    Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 };
@@ -103,9 +152,14 @@ const Map3D = () => {
   const totalMarkerCount = EXTRA_MARKERS.length;
   const disabledCount = React.useMemo(() => {
     const set = new Set(disabledMarkerTitles);
-    return EXTRA_MARKERS.reduce((acc, m) => acc + (set.has(m.title) ? 1 : 0), 0);
+    return EXTRA_MARKERS.reduce(
+      (acc, m) => acc + (set.has(m.title) ? 1 : 0),
+      0
+    );
   }, [disabledMarkerTitles]);
-  const disabledPct = totalMarkerCount ? Math.round((disabledCount / totalMarkerCount) * 100) : 0;
+  const disabledPct = totalMarkerCount
+    ? Math.round((disabledCount / totalMarkerCount) * 100)
+    : 0;
 
   useEffect(() => {
     isWalkModeRef.current = isWalkMode;
@@ -117,7 +171,8 @@ const Map3D = () => {
     scheduleMarkerUpdate();
   }, [disabledMarkerTitles]);
 
-  const mobileLog = (msg) => console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
+  const mobileLog = (msg) =>
+    console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
 
   // rAF throttle
   const scheduleMarkerUpdate = () => {
@@ -134,12 +189,16 @@ const Map3D = () => {
   };
 
   function getClosestMarkerAndDistance(userLoc, markers) {
-    if (!userLoc || markers.length === 0) return { nearest: null, distance: null };
+    if (!userLoc || markers.length === 0)
+      return { nearest: null, distance: null };
     let minDist = Infinity;
     let nearest = null;
     for (const m of markers) {
       const d = calculateDistance(userLoc[1], userLoc[0], m.lat, m.lng);
-      if (d < minDist) { minDist = d; nearest = m; }
+      if (d < minDist) {
+        minDist = d;
+        nearest = m;
+      }
     }
     return { nearest, distance: nearest ? Math.round(minDist) : null };
   }
@@ -150,8 +209,13 @@ const Map3D = () => {
       setShowARButton(false);
       return;
     }
-    const activeMarkers = EXTRA_MARKERS.filter((m) => !disabledMarkerTitles.includes(m.title));
-    const { nearest, distance } = getClosestMarkerAndDistance(userLocation, activeMarkers);
+    const activeMarkers = EXTRA_MARKERS.filter(
+      (m) => !disabledMarkerTitles.includes(m.title)
+    );
+    const { nearest, distance } = getClosestMarkerAndDistance(
+      userLocation,
+      activeMarkers
+    );
     const inRange = isWalkMode && nearest && distance <= 100;
 
     if (inRange && !arPrefetchedRef.current) {
@@ -164,7 +228,11 @@ const Map3D = () => {
 
   const centerMapToUserLocation = (userCoords, zoomLevel = 16) => {
     if (map.current && !hasCenteredOnUser.current) {
-      map.current.easeTo({ center: userCoords, zoom: zoomLevel, duration: 2000 });
+      map.current.easeTo({
+        center: userCoords,
+        zoom: zoomLevel,
+        duration: 2000,
+      });
       hasCenteredOnUser.current = true;
     }
   };
@@ -176,29 +244,48 @@ const Map3D = () => {
     if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
     watchId.current = navigator.geolocation.watchPosition(
       (position) => {
-        const { longitude, latitude } = position.coords;
+        const { longitude, latitude, accuracy } = position.coords;
+        const ts = position.timestamp || Date.now();
+
+        // ✅ 모든 수신 위치(raw) 로그
+        console.log(
+          `[GPS/raw] ${longitude.toFixed(6)}, ${latitude.toFixed(
+            6
+          )}  (±${Math.round(accuracy || 0)}m)  @ ${new Date(
+            ts
+          ).toLocaleTimeString()}`
+        );
+
         const userCoords = [longitude, latitude];
 
         const now = performance.now();
-        const movedEnough =
-          !lastLocRef.current ||
-          calculateDistance(
-            lastLocRef.current[1], lastLocRef.current[0],
-            userCoords[1], userCoords[0]
-          ) >= 5; // ≥ 5m
-        const timeEnough = now - lastTsRef.current >= 800; // ≥ 0.8s
-        if (!movedEnough && !timeEnough) return;
+        const distFromLast = lastLocRef.current
+          ? calculateDistance(
+              lastLocRef.current[1],
+              lastLocRef.current[0],
+              userCoords[1],
+              userCoords[0]
+            )
+          : 0;
 
-        // ⛳️ 산책 중 거리 누적
+        const movedEnough = !lastLocRef.current || distFromLast >= 5; // ≥ 5m
+        const timeEnough = now - lastTsRef.current >= 800; // ≥ 0.8s
+        if (!movedEnough && !timeEnough) return; // 🔇 노이즈 컷된 업데이트는 UI 반영 X
+
+        // ✅ 노이즈 컷 통과해 실제로 반영되는 위치 로그
+        console.log(
+          `[GPS/use] ${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(
+            6
+          )} | +${distFromLast.toFixed(1)}m / ${Math.round(
+            now - lastTsRef.current
+          )}ms`
+        );
+
+        // 산책 중이면 거리 누적
         if (isWalkModeRef.current && walkStartTsRef.current) {
           if (walkPrevRef.current) {
-            const seg = calculateDistance(
-              walkPrevRef.current[1], walkPrevRef.current[0],
-              userCoords[1], userCoords[0]
-            );
-            if (seg >= 1) { // 1m 미만 노이즈 무시
-              walkDistanceRef.current += seg;
-            }
+            const seg = distFromLast; // 위에서 계산한 거리 재사용
+            if (seg >= 1) walkDistanceRef.current += seg; // 1m 미만 노이즈 무시
           }
           walkPrevRef.current = userCoords;
         }
@@ -227,12 +314,23 @@ const Map3D = () => {
     const baseFeatures = [
       {
         type: "Feature",
-        properties: { id: "main", title: "전북대학교", description: "산책 프로젝트 출발지" },
-        geometry: { type: "Point", coordinates: [CONFIG.targetLng, CONFIG.targetLat] },
+        properties: {
+          id: "main",
+          title: "전북대학교",
+          description: "산책 프로젝트 출발지",
+        },
+        geometry: {
+          type: "Point",
+          coordinates: [CONFIG.targetLng, CONFIG.targetLat],
+        },
       },
       ...EXTRA_MARKERS.map((marker, index) => ({
         type: "Feature",
-        properties: { id: `spot_${index}`, title: marker.title, description: marker.description },
+        properties: {
+          id: `spot_${index}`,
+          title: marker.title,
+          description: marker.description,
+        },
         geometry: { type: "Point", coordinates: [marker.lng, marker.lat] },
       })),
     ];
@@ -243,7 +341,9 @@ const Map3D = () => {
         features: baseFeatures.filter((f) => {
           const [lng, lat] = f.geometry.coordinates;
           const [dlng, dlat] = excludeDestination;
-          return !(Math.abs(lng - dlng) < 0.000001 && Math.abs(lat - dlat) < 0.000001);
+          return !(
+            Math.abs(lng - dlng) < 0.000001 && Math.abs(lat - dlat) < 0.000001
+          );
         }),
       };
     }
@@ -253,7 +353,10 @@ const Map3D = () => {
   const safeRemoveSourceAndLayers = (sourceId) => {
     if (!map.current) return;
     try {
-      const layerIds = { "walk-route": ["walk-route"], markers: ["clusters", "cluster-count"] };
+      const layerIds = {
+        "walk-route": ["walk-route"],
+        markers: ["clusters", "cluster-count"],
+      };
       (layerIds[sourceId] || []).forEach((layerId) => {
         if (map.current.getLayer(layerId)) map.current.removeLayer(layerId);
       });
@@ -266,18 +369,33 @@ const Map3D = () => {
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/streets-v12",
-      center, zoom: 15, pitch: 60, bearing: -17.6,
-      antialias: true, preserveDrawingBuffer: true, renderWorldCopies: false,
+      center,
+      zoom: 15,
+      pitch: 60,
+      bearing: -17.6,
+      antialias: true,
+      preserveDrawingBuffer: true,
+      renderWorldCopies: false,
     });
 
     map.current.addControl(
-      new mapboxgl.NavigationControl({ visualizePitch: true, showCompass: true, showZoom: true }),
+      new mapboxgl.NavigationControl({
+        visualizePitch: true,
+        showCompass: true,
+        showZoom: true,
+      }),
       "bottom-right"
     );
 
     geolocateControl.current = new mapboxgl.GeolocateControl({
-      positionOptions: { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
-      trackUserLocation: true, showUserHeading: true, showAccuracyCircle: true,
+      positionOptions: {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 5000,
+      },
+      trackUserLocation: true,
+      showUserHeading: true,
+      showAccuracyCircle: true,
     });
 
     map.current.addControl(geolocateControl.current, "bottom-right");
@@ -331,9 +449,13 @@ const Map3D = () => {
         try {
           map.current.off("click", "clusters", handleClusterClick);
           ["move", "zoom", "idle"].forEach((ev) =>
-            map.current.off(ev, scheduleMarkerUpdateRef.current || updateDOMMarkers)
+            map.current.off(
+              ev,
+              scheduleMarkerUpdateRef.current || updateDOMMarkers
+            )
           );
-          if (geolocateControl.current) map.current.removeControl(geolocateControl.current);
+          if (geolocateControl.current)
+            map.current.removeControl(geolocateControl.current);
         } catch {}
         map.current.remove();
         map.current = null;
@@ -375,14 +497,22 @@ const Map3D = () => {
 
       map.current.addSource("walk-route", {
         type: "geojson",
-        data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: filteredRoute } },
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: { type: "LineString", coordinates: filteredRoute },
+        },
       });
       map.current.addLayer({
         id: "walk-route",
         type: "line",
         source: "walk-route",
         layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": "#ff2d55", "line-width": 6, "line-opacity": 0.95 },
+        paint: {
+          "line-color": "#ff2d55",
+          "line-width": 6,
+          "line-opacity": 0.95,
+        },
       });
 
       const bounds = filteredRoute.reduce(
@@ -408,7 +538,9 @@ const Map3D = () => {
     if (walkTimerRef.current) clearInterval(walkTimerRef.current);
     walkTimerRef.current = setInterval(() => {
       if (!walkStartTsRef.current) return;
-      const sec = Math.floor((performance.now() - walkStartTsRef.current) / 1000);
+      const sec = Math.floor(
+        (performance.now() - walkStartTsRef.current) / 1000
+      );
       setElapsedSec(sec);
       setDistanceM(Math.round(walkDistanceRef.current));
     }, 1000);
@@ -449,16 +581,25 @@ const Map3D = () => {
       const fixedStartLocation = [...userLocation];
       getRouteWithFixedLocation(fixedStartLocation, coords);
     } else {
-      if (!navigator.geolocation) return alert("이 브라우저는 위치 서비스를 지원하지 않습니다.");
+      if (!navigator.geolocation)
+        return alert("이 브라우저는 위치 서비스를 지원하지 않습니다.");
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          const userCoords = [position.coords.longitude, position.coords.latitude];
+          const userCoords = [
+            position.coords.longitude,
+            position.coords.latitude,
+          ];
           const fixedStartLocation = [...userCoords];
           setUserLocation(userCoords);
-          setTimeout(() => getRouteWithFixedLocation(fixedStartLocation, coords), 100);
+          setTimeout(
+            () => getRouteWithFixedLocation(fixedStartLocation, coords),
+            100
+          );
         },
         (error) => {
-          alert(`위치 서비스 오류: ${error.message}\n\n해결방법:\n1. 브라우저 설정에서 위치 권한 허용\n2. 페이지 새로고침`);
+          alert(
+            `위치 서비스 오류: ${error.message}\n\n해결방법:\n1. 브라우저 설정에서 위치 권한 허용\n2. 페이지 새로고침`
+          );
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
@@ -485,15 +626,22 @@ const Map3D = () => {
   };
 
   const handleClusterClick = (event) => {
-    const features = map.current.queryRenderedFeatures(event.point, { layers: ["clusters"] });
-    if (!features.length) return;
-    const { cluster_id: clusterId, point_count: pointCount } = features[0].properties;
-    const coordinates = features[0].geometry.coordinates.slice();
-    map.current.getSource("markers").getClusterExpansionZoom(clusterId, (err, zoom) => {
-      if (err) return;
-      const shouldZoom = window.confirm(`클러스터에 ${pointCount}개의 마커가 있습니다.\n확대하시겠습니까?`);
-      if (shouldZoom) map.current.easeTo({ center: coordinates, zoom });
+    const features = map.current.queryRenderedFeatures(event.point, {
+      layers: ["clusters"],
     });
+    if (!features.length) return;
+    const { cluster_id: clusterId, point_count: pointCount } =
+      features[0].properties;
+    const coordinates = features[0].geometry.coordinates.slice();
+    map.current
+      .getSource("markers")
+      .getClusterExpansionZoom(clusterId, (err, zoom) => {
+        if (err) return;
+        const shouldZoom = window.confirm(
+          `클러스터에 ${pointCount}개의 마커가 있습니다.\n확대하시겠습니까?`
+        );
+        if (shouldZoom) map.current.easeTo({ center: coordinates, zoom });
+      });
   };
 
   const updateDOMMarkers = () => {
@@ -508,7 +656,8 @@ const Map3D = () => {
         const key = coordKey(coordArr);
         const title = feature.properties?.title || "";
 
-        const visuallyDisabled = isWalkModeRef.current && disabledTitlesRef.current.includes(title);
+        const visuallyDisabled =
+          isWalkModeRef.current && disabledTitlesRef.current.includes(title);
         const interactive = isWalkModeRef.current && !visuallyDisabled;
 
         newKeys.add(key);
@@ -525,10 +674,21 @@ const Map3D = () => {
               onClick={() => handlePinMarkerClick(coordArr, feature)}
             />
           );
-          const marker = new mapboxgl.Marker(el).setLngLat(coordArr).addTo(map.current);
-          domMarkerMap.current.set(key, { marker, root, disabled: visuallyDisabled, interactive, title });
+          const marker = new mapboxgl.Marker(el)
+            .setLngLat(coordArr)
+            .addTo(map.current);
+          domMarkerMap.current.set(key, {
+            marker,
+            root,
+            disabled: visuallyDisabled,
+            interactive,
+            title,
+          });
         } else {
-          if (existing.disabled !== visuallyDisabled || existing.interactive !== interactive) {
+          if (
+            existing.disabled !== visuallyDisabled ||
+            existing.interactive !== interactive
+          ) {
             existing.root.render(
               <PinMarker
                 imageUrl={CONFIG.markerImageUrl}
@@ -597,22 +757,35 @@ const Map3D = () => {
       });
 
       map.current.on("click", "clusters", handleClusterClick);
-      map.current.on("mouseenter", "clusters", () => (map.current.getCanvas().style.cursor = "pointer"));
-      map.current.on("mouseleave", "clusters", () => (map.current.getCanvas().style.cursor = ""));
+      map.current.on(
+        "mouseenter",
+        "clusters",
+        () => (map.current.getCanvas().style.cursor = "pointer")
+      );
+      map.current.on(
+        "mouseleave",
+        "clusters",
+        () => (map.current.getCanvas().style.cursor = "")
+      );
 
       ["move", "zoom", "idle"].forEach((event) => {
-        map.current.on(event, scheduleMarkerUpdateRef.current || scheduleMarkerUpdate);
+        map.current.on(
+          event,
+          scheduleMarkerUpdateRef.current || scheduleMarkerUpdate
+        );
       });
 
       const handleSourceData = (e) => {
-        if (e.sourceId === "markers" && e.isSourceLoaded) scheduleMarkerUpdate();
+        if (e.sourceId === "markers" && e.isSourceLoaded)
+          scheduleMarkerUpdate();
       };
       map.current.on("sourcedata", handleSourceData);
 
       // 3d buildings (원본 유지)
       const layers = map.current.getStyle().layers;
       const labelLayerId = layers.find(
-        (layer) => layer.type === "symbol" && layer.layout && layer.layout["text-field"]
+        (layer) =>
+          layer.type === "symbol" && layer.layout && layer.layout["text-field"]
       )?.id;
 
       map.current.addLayer(
@@ -625,8 +798,24 @@ const Map3D = () => {
           minzoom: 15,
           paint: {
             "fill-extrusion-color": "#aaa",
-            "fill-extrusion-height": ["interpolate", ["linear"], ["zoom"], 15, 0, 15.05, ["get", "height"]],
-            "fill-extrusion-base": ["interpolate", ["linear"], ["zoom"], 15, 0, 15.05, ["get", "min_height"]],
+            "fill-extrusion-height": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              15,
+              0,
+              15.05,
+              ["get", "height"],
+            ],
+            "fill-extrusion-base": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              15,
+              0,
+              15.05,
+              ["get", "min_height"],
+            ],
             "fill-extrusion-opacity": 0.6,
           },
         },
@@ -638,18 +827,37 @@ const Map3D = () => {
   };
 
   return (
-    <div className="map-container" style={{ width: "100%", height: "100vh", position: "relative" }}>
-      <div ref={mapContainer} className="mapbox-container" style={{ width: "100%", height: "100%" }} />
+    <div
+      className="map-container"
+      style={{ width: "100%", height: "100vh", position: "relative" }}
+    >
+      <div
+        ref={mapContainer}
+        className="mapbox-container"
+        style={{ width: "100%", height: "100%" }}
+      />
 
       {!isWalkMode && (
         <button
           onClick={handleStart}
           aria-label="산책 시작"
           style={{
-            position: "absolute", left: "50%", transform: "translateX(-50%)",
-            bottom: 24, zIndex: 1200, width: 64, height: 64, borderRadius: "50%",
-            background: "#3A8049", color: "#fff", border: "none",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.25)", fontWeight: 800, fontSize: 14, letterSpacing: 0.3, cursor: "pointer",
+            position: "absolute",
+            left: "50%",
+            transform: "translateX(-50%)",
+            bottom: 24,
+            zIndex: 1200,
+            width: 64,
+            height: 64,
+            borderRadius: "50%",
+            background: "#3A8049",
+            color: "#fff",
+            border: "none",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+            fontWeight: 800,
+            fontSize: 14,
+            letterSpacing: 0.3,
+            cursor: "pointer",
           }}
         >
           Start
@@ -675,32 +883,90 @@ const Map3D = () => {
             boxShadow: "0 6px 16px rgba(0,0,0,0.12)",
           }}
         >
-          <div style={{ display: "grid", gridTemplateColumns: "72px 1fr auto", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "72px 1fr auto",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 8,
+            }}
+          >
             <button
               onClick={handleGaugeStop}
-              style={{ height: 28, borderRadius: 6, border: "none", background: "#ff2d55", color: "#fff", fontSize: 12, fontWeight: 800, letterSpacing: 0.2, cursor: "pointer" }}
+              style={{
+                height: 28,
+                borderRadius: 6,
+                border: "none",
+                background: "#ff2d55",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 0.2,
+                cursor: "pointer",
+              }}
             >
               종료
             </button>
-            <div style={{ textAlign: "center", fontSize: 12, color: "#333", fontWeight: 600 }}>
+            <div
+              style={{
+                textAlign: "center",
+                fontSize: 12,
+                color: "#333",
+                fontWeight: 600,
+              }}
+            >
               {disabledCount} / {totalMarkerCount} ({disabledPct}%)
             </div>
-            <span style={{ padding: "4px 8px", borderRadius: 999, background: "#E8F5E9", color: "#2E7D32", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
+            <span
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "#E8F5E9",
+                color: "#2E7D32",
+                fontSize: 11,
+                fontWeight: 800,
+                lineHeight: 1,
+              }}
+            >
               진행중
             </span>
           </div>
 
           {/* ⏱️ 시간 · 🚶 거리 */}
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12, color: "#333", fontWeight: 700 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              marginBottom: 8,
+              fontSize: 12,
+              color: "#333",
+              fontWeight: 700,
+            }}
+          >
             <div>⏱ {formatDuration(elapsedSec)}</div>
             <div>🚶 {distanceM} m</div>
           </div>
 
-          <div style={{ height: 6, borderRadius: 999, background: "#e9ecef", overflow: "hidden" }}>
+          <div
+            style={{
+              height: 6,
+              borderRadius: 999,
+              background: "#e9ecef",
+              overflow: "hidden",
+            }}
+          >
             <div
               style={{
-                width: `${disabledPct}%`, height: "100%", borderRadius: 999,
-                background: disabledPct < 50 ? "#3A8049" : disabledPct < 80 ? "#FF9800" : "#ff2d55",
+                width: `${disabledPct}%`,
+                height: "100%",
+                borderRadius: 999,
+                background:
+                  disabledPct < 50
+                    ? "#3A8049"
+                    : disabledPct < 80
+                    ? "#FF9800"
+                    : "#ff2d55",
                 transition: "width 300ms ease",
               }}
             />
