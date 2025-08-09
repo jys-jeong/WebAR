@@ -585,7 +585,7 @@ export default function SimpleAROverlay({
         ×
       </button>
 
-      {/* 이펙트 스타일 */}
+      
       <style jsx>{`
         @keyframes fx-pop {
           0%   { transform: scale(0.3); opacity: 0.9; }
