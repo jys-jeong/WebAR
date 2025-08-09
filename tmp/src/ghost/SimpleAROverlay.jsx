@@ -6,7 +6,10 @@ import useGeoLocation from "./useGeoLocation";
 import useCompass from "./useCompass";
 import Ghost from "./Ghost";
 import ScorePanel from "./ScorePanel";
-
+// 도착/조준 기준
+const ARRIVE_RADIUS_M = 1.2; // 위치 도착 판정 반경(≈1.2m)
+const AIM_TOLERANCE_DEG = 6; // 조준 허용각(±6° 내)
+const CAMERA_FOV_DEG = 60; // 사용 중인 가로 시야각(정보 패널 텍스트도 60°로 표시 중)
 export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const videoRef = useRef(null);
 
@@ -69,13 +72,19 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         360 - Math.abs(orientation.alpha - ghost.targetAlpha)
       );
       const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
-      const inView = alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
+      const inView =
+        alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
       if (!inView) return { ...ghost, pos: { x: -100, y: -100 } };
       return ghost;
     }
 
     // gps-fixed
-    if (ghost.type === "gps-fixed" && location && compass) {
+    if (
+      ghost.type === "gps-fixed" &&
+      location &&
+      compass &&
+      Number.isFinite(compass.heading)
+    ) {
       const distance = calculateDistance(
         location.latitude,
         location.longitude,
@@ -83,16 +92,19 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         ghost.gpsLon
       );
 
-      const maxDistance = ghost.maxVisibleDistance || 100;
-      if (distance > maxDistance) {
+      // ① 반드시 도착(≤ ARRIVE_RADIUS_M)해야 함
+      if (distance > ARRIVE_RADIUS_M) {
         return {
           ...ghost,
           pos: { x: -100, y: -100 },
           currentDistance: distance,
-          reason: "거리 초과",
+          reason: `도착 필요 (${(distance - ARRIVE_RADIUS_M).toFixed(
+            1
+          )}m 남음)`,
         };
       }
 
+      // ② 도착했으면 '조준 허용각' 안으로 겨눠야 함
       const ghostBearing = calculateBearing(
         location.latitude,
         location.longitude,
@@ -100,42 +112,54 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         ghost.gpsLon
       );
       const cameraBearing = compass.heading;
-      const inView = isInCameraView(ghostBearing, cameraBearing, 60);
+      const delta = angleDelta(ghostBearing, cameraBearing);
 
-      if (!inView) {
+      // 대략적인 FOV 체크는 선택이지만, FOV 밖이면 숨김 처리
+      if (delta > CAMERA_FOV_DEG / 2) {
         return {
           ...ghost,
           pos: { x: -100, y: -100 },
-          currentDistance: distance,        // ✅ 실시간 거리
+          currentDistance: distance,
           ghostBearing,
           cameraBearing,
-          deltaToCamera: angleDelta(ghostBearing, cameraBearing),
+          deltaToCamera: delta,
           reason: "시야각 밖",
         };
       }
 
-      let angleDiff = ghostBearing - cameraBearing;
-      if (angleDiff > 180) angleDiff -= 360;
-      if (angleDiff < -180) angleDiff += 360;
+      // 조준 각도(±AIM_TOLERANCE_DEG) 안이어야 뜸
+      if (delta > AIM_TOLERANCE_DEG) {
+        return {
+          ...ghost,
+          pos: { x: -100, y: -100 },
+          currentDistance: distance,
+          ghostBearing,
+          cameraBearing,
+          deltaToCamera: delta,
+          reason: `미조준 (Δ ${delta.toFixed(0)}°)`,
+        };
+      }
 
-      const screenX = 50 + (angleDiff / 60) * 80;
+      // ③ 조건 충족 → 화면 중앙에 표시
+      const screenX = 50;
       const screenY = 50;
-      const sizeScale = Math.max(0.5, 50 / Math.max(distance, 1));
+
+      // 너무 가까우면 사이즈 튀는 것 방지: 0.9 ~ 1.3 배로 클램프
+      const sizeScaleRaw = 50 / Math.max(distance, 0.5);
+      const sizeScale = Math.max(0.9, Math.min(1.3, sizeScaleRaw));
 
       return {
         ...ghost,
-        pos: { x: Math.max(10, Math.min(90, screenX)), y: screenY },
+        pos: { x: screenX, y: screenY },
         size: (ghost.size || 120) * sizeScale,
-        opacity: Math.max(0.7, 1 - distance / maxDistance),
-        currentDistance: distance,          // ✅ 실시간 거리
+        opacity: 1,
+        currentDistance: distance,
         ghostBearing,
         cameraBearing,
-        deltaToCamera: angleDelta(ghostBearing, cameraBearing),
-        reason: "표시됨",
+        deltaToCamera: delta,
+        reason: "도착+조준 성공",
       };
     }
-
-    return ghost;
   };
 
   // 기본 세팅
@@ -172,13 +196,24 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         return prev.map((g) => {
           if (g.type !== "gps-fixed") return g;
           const p = makeOffset1m();
-          return { ...g, gpsLat: p.lat, gpsLon: p.lng, maxVisibleDistance: g.maxVisibleDistance || 100 };
+          return {
+            ...g,
+            gpsLat: p.lat,
+            gpsLon: p.lng,
+            maxVisibleDistance: g.maxVisibleDistance || 100,
+          };
         });
       } else {
         const p = makeOffset1m();
         return [
           ...prev,
-          { type: "gps-fixed", gpsLat: p.lat, gpsLon: p.lng, maxVisibleDistance: 100, size: 120 },
+          {
+            type: "gps-fixed",
+            gpsLat: p.lat,
+            gpsLon: p.lng,
+            maxVisibleDistance: 100,
+            size: 120,
+          },
         ];
       }
     });
@@ -189,13 +224,18 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     if (!isActive) return;
     navigator.mediaDevices
       .getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
       })
       .then((s) => {
         if (videoRef.current) videoRef.current.srcObject = s;
       })
       .catch(() => alert("카메라 권한이 필요합니다"));
-    return () => videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
+    return () =>
+      videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
   }, [isActive]);
 
   // move patterns (always-visible only)
@@ -204,14 +244,19 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
 
     const timers = ghosts
       .map((gh, index) => {
-        if (gh.type === "orientation-fixed" || gh.type === "gps-fixed") return null;
+        if (gh.type === "orientation-fixed" || gh.type === "gps-fixed")
+          return null;
 
         return setInterval(() => {
           setGhosts((prev) => {
             const next = [...prev];
-            if (!next[index] || next[index].type !== "always-visible") return prev;
+            if (!next[index] || next[index].type !== "always-visible")
+              return prev;
 
-            const pattern = movementPatterns[Math.floor(Math.random() * movementPatterns.length)];
+            const pattern =
+              movementPatterns[
+                Math.floor(Math.random() * movementPatterns.length)
+              ];
             let { x, y } = next[index].pos;
 
             switch (pattern) {
@@ -231,8 +276,19 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
               ...next[index],
               pos: { x, y },
               size:
-                Math.random() < 0.2 ? Math.max(80, Math.min(250, next[index].size + (Math.random() - 0.5) * 30)) : next[index].size,
-              rotation: Math.random() < 0.15 ? (next[index].rotation + Math.random() * 60) % 360 : next[index].rotation,
+                Math.random() < 0.2
+                  ? Math.max(
+                      80,
+                      Math.min(
+                        250,
+                        next[index].size + (Math.random() - 0.5) * 30
+                      )
+                    )
+                  : next[index].size,
+              rotation:
+                Math.random() < 0.15
+                  ? (next[index].rotation + Math.random() * 60) % 360
+                  : next[index].rotation,
             };
 
             return next;
@@ -252,13 +308,36 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const fx = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "#000", zIndex: 9999 }}>
-      <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        background: "#000",
+        zIndex: 9999,
+      }}
+    >
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
 
       {/* 👻 실제 렌더 */}
       {processedGhosts.map((pg, i) => {
         if (!pg.pos || pg.pos.x < 0) return null;
-        return <Ghost key={`ghost-${i}`} gh={pg} idx={i} onClick={() => catchGhost(i)} />;
+        return (
+          <Ghost
+            key={`ghost-${i}`}
+            gh={pg}
+            idx={i}
+            onClick={() => catchGhost(i)}
+          />
+        );
       })}
 
       <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
@@ -279,7 +358,9 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           maxWidth: 200,
         }}
       >
-        <div style={{ color: "#4CAF50", fontWeight: 800, marginBottom: 6 }}>🧍 내 정보</div>
+        <div style={{ color: "#4CAF50", fontWeight: 800, marginBottom: 6 }}>
+          🧍 내 정보
+        </div>
         {location && (
           <div style={{ marginBottom: 4 }}>
             📍 {fx(location.latitude, 6)}, {fx(location.longitude, 6)}
@@ -309,19 +390,39 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           maxWidth: 200,
         }}
       >
-        <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: 6 }}>👻 유령</div>
+        <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: 6 }}>
+          👻 유령
+        </div>
         {processedGhosts.map((pg, i) => {
           const g = ghosts[i];
           const visible = !!pg.pos && pg.pos.x >= 0;
           return (
-            <div key={`info-${i}`} style={{ padding: "8px 8px", borderRadius: 6, background: "rgba(255,255,255,0.06)", marginBottom: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <div style={{ fontWeight: 800 }}>#{i + 1} • {g.type}</div>
+            <div
+              key={`info-${i}`}
+              style={{
+                padding: "8px 8px",
+                borderRadius: 6,
+                background: "rgba(255,255,255,0.06)",
+                marginBottom: 6,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: 4,
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>
+                  #{i + 1} • {g.type}
+                </div>
                 <span
                   style={{
                     padding: "1px 6px",
                     borderRadius: 999,
-                    background: visible ? "rgba(76,175,80,0.18)" : "rgba(255,152,0,0.18)",
+                    background: visible
+                      ? "rgba(76,175,80,0.18)"
+                      : "rgba(255,152,0,0.18)",
                     color: visible ? "#4CAF50" : "#FF9800",
                     fontWeight: 800,
                   }}
@@ -333,8 +434,13 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
               {/* GPS 유령: 실시간 거리 강조 */}
               {g.type === "gps-fixed" && (
                 <>
-                  <div>📍 {fx(g.gpsLat, 6)}, {fx(g.gpsLon, 6)}</div>
-                  <div style={{ fontWeight: 800 }}>📏 거리: {fx(pg.currentDistance, 1)} m</div> {/* ✅ 실시간 */}
+                  <div>
+                    📍 {fx(g.gpsLat, 6)}, {fx(g.gpsLon, 6)}
+                  </div>
+                  <div style={{ fontWeight: 800 }}>
+                    📏 거리: {fx(pg.currentDistance, 1)} m
+                  </div>{" "}
+                  {/* ✅ 실시간 */}
                   <div>🧭 방위: {fx(pg.ghostBearing, 0)}°</div>
                   <div>Δ: {fx(pg.deltaToCamera, 0)}°</div>
                 </>
@@ -343,15 +449,22 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
               {/* 회전 유령: 현재/목표 각도 요약 */}
               {g.type === "orientation-fixed" && (
                 <>
-                  <div>목표 α/β: {fx(g.targetAlpha, 0)}° / {fx(g.targetBeta, 0)}°</div>
-                  <div>현재 α/β: {fx(orientation?.alpha, 0)}° / {fx(orientation?.beta, 0)}°</div>
+                  <div>
+                    목표 α/β: {fx(g.targetAlpha, 0)}° / {fx(g.targetBeta, 0)}°
+                  </div>
+                  <div>
+                    현재 α/β: {fx(orientation?.alpha, 0)}° /{" "}
+                    {fx(orientation?.beta, 0)}°
+                  </div>
                 </>
               )}
 
               {/* 항상 보임: 화면 좌표만 간단히 */}
               {g.type === "always-visible" && (
                 <>
-                  <div>화면: {fx(pg.pos?.x, 0)}%, {fx(pg.pos?.y, 0)}%</div>
+                  <div>
+                    화면: {fx(pg.pos?.x, 0)}%, {fx(pg.pos?.y, 0)}%
+                  </div>
                   <div>크기: {Math.round(pg.size || 0)}</div>
                 </>
               )}
