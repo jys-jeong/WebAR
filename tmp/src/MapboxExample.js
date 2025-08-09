@@ -697,7 +697,10 @@ const Map3D = () => {
 
   // ✅ 마커 클릭 핸들러 (마커 유지 버전)
   const handlePinMarkerClick = (coords, feature) => {
+    console.log("마커 클림됨");
+    mobileLog("경로 초기화");
     if (!isWalkMode) return;
+    mobileLog("경로 생성");
     clearRoute();
     mobileLog(
       `마커 클릭됨: [${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}]`,
