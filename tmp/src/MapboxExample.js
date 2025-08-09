@@ -681,6 +681,14 @@ const Map3D = () => {
       setIsRouting(false);
     }
   };
+  const handleGaugeStop = () => {
+    setIsWalkMode(false);
+    setShowARButton(false);
+    setIsARActive(false);
+    clearRoute();
+    setClosestMarker(null);
+    setNearbyMarkers([]);
+  };
 
   // 길찾기 함수 (현재 위치 고정)
   const getRoute = async (end) => {
@@ -1056,7 +1064,7 @@ const Map3D = () => {
         destinationPoint={destinationPoint}
       /> */}
       {/* 최근접 마커 정보 표시 */}
-      {closestMarker && (
+      {/* {closestMarker && (
         <div
           style={{
             position: "absolute",
@@ -1072,7 +1080,7 @@ const Map3D = () => {
           <strong>가장 가까운 장소:</strong> {closestMarker.title} (
           {closestDistance}m)
         </div>
-      )}
+      )} */}
 
       {/* 모바일 디버깅 패널 토글 버튼
       <button
@@ -1144,7 +1152,7 @@ const Map3D = () => {
           </div>
 
           {/* 현재 상태 요약 */}
-          {/* <div
+      {/* <div
             style={{
               marginBottom: "15px",
               padding: "10px",
@@ -1179,8 +1187,8 @@ const Map3D = () => {
             </div>
           </div> */}
 
-          {/* 로그 목록 */}
-          {/* <div style={{ marginBottom: "15px" }}>
+      {/* 로그 목록 */}
+      {/* <div style={{ marginBottom: "15px" }}>
             {debugInfo.length === 0 ? (
               <div style={{ textAlign: "center", color: "#999" }}>
                 로그가 없습니다
@@ -1212,8 +1220,8 @@ const Map3D = () => {
             )}
           </div> */}
 
-          {/* 디버깅 버튼들 */}
-          {/* <div
+      {/* 디버깅 버튼들 */}
+      {/* <div
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
@@ -1529,31 +1537,74 @@ const Map3D = () => {
           <span>AR 카메라</span>
         </button>
       )}
-      {(
+      {isWalkMode && (
         <div
           style={{
             position: "absolute",
-            top: "calc(16px + env(safe-area-inset-top))", // iOS notch 대응
+            top: "calc(16px + env(safe-area-inset-top))",
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 1200,
-            width: "50%",
+            width: "min(360px, calc(100% - 32px))",
             padding: "10px 12px",
             borderRadius: 12,
             background: "rgba(255,255,255,0.95)",
             boxShadow: "0 6px 16px rgba(0,0,0,0.12)",
           }}
         >
+          {/* 상단 행: 종료 / 수치 / 진행중 */}
           <div
             style={{
-              display: "flex",
+              display: "grid",
+              gridTemplateColumns: "72px 1fr auto",
               alignItems: "center",
-              justifyContent: "center",
+              gap: 8,
               marginBottom: 8,
             }}
           >
-            <span style={{ marginLeft: 8, fontSize: 12, color: "#333" }}>
+            {/* 빨간 종료 버튼 */}
+            <button
+              onClick={handleGaugeStop}
+              style={{
+                height: 28,
+                borderRadius: 6,
+                border: "none",
+                background: "#ff2d55",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 0.2,
+                cursor: "pointer",
+              }}
+            >
+              종료
+            </button>
+
+            {/* 비율 텍스트(가운데) */}
+            <div
+              style={{
+                textAlign: "center",
+                fontSize: 12,
+                color: "#333",
+                fontWeight: 600,
+              }}
+            >
               {disabledCount} / {totalMarkerCount} ({disabledPct}%)
+            </div>
+
+            {/* 우측 ‘진행중’ 배지 */}
+            <span
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "#E8F5E9", // 연한 초록 배경
+                color: "#2E7D32", // 진한 초록 글자
+                fontSize: 11,
+                fontWeight: 800,
+                lineHeight: 1,
+              }}
+            >
+              진행중
             </span>
           </div>
 
