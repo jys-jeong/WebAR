@@ -1,846 +1,529 @@
-import React, { useRef, useEffect, useState, useMemo, Suspense } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import { createRoot } from "react-dom/client";
-import { PinMarker } from "./PinMarker";
-import ARButton from "./ARButton";
+// components/SimpleAROverlay.jsx
+import React, { useEffect, useRef, useState } from "react";
+import useGhostGame from "./useGhostGame";
+import useDeviceOrientation from "./useDeviceOrientation";
+import useGeoLocation from "./useGeoLocation";
+import useCompass from "./useCompass"; // ✅ 나침반 추가
+import Ghost from "./Ghost";
+import ScorePanel from "./ScorePanel";
 
-// 👇 AR 오버레이는 lazy 로딩
-const SimpleAROverlay = React.lazy(() => import("./ghost/SimpleAROverlay"));
+const TICK = 100;
 
-// 상수 정의
-export const CONFIG = {
-  targetLng: 127.1465,
-  targetLat: 35.8477,
-  markerImageUrl: "/image.jpg",
-  mapboxToken:
-    "pk.eyJ1IjoiamVvbmd5ZXNlb25nIiwiYSI6ImNtZHJldDNkODBmMW4yaXNhOGE1eWg4ODcifQ.LNsrvvxhCIJ6Lvwc9c0tVg",
-};
+export default function SimpleAROverlay({ isActive, onClose }) {
+  const videoRef = useRef(null);
 
-const MARKER_CENTER = { lng: 126.82287685, lat: 35.18376162 };
+  const { orientation, supported } = useDeviceOrientation();
+  const { location } = useGeoLocation();
+  const { compass } = useCompass(); // ✅ 나침반 사용
 
-// 기준 좌표 중심으로 10개 마커 랜덤 배치 (약 100~200m 반경)
-export const EXTRA_MARKERS = [
-  { lng: MARKER_CENTER.lng + 0.0012, lat: MARKER_CENTER.lat + 0.001,  title: "커피마을", description: "향긋한 커피가 있는 곳" },
-  { lng: MARKER_CENTER.lng - 0.0011, lat: MARKER_CENTER.lat - 0.0007, title: "헬스존",   description: "건강을 위한 헬스장" },
-  { lng: MARKER_CENTER.lng + 0.0008, lat: MARKER_CENTER.lat - 0.0012, title: "피크닉장", description: "야외 피크닉 명소" },
-  { lng: MARKER_CENTER.lng - 0.0009, lat: MARKER_CENTER.lat + 0.0005, title: "놀이터",   description: "아이들이 뛰노는 놀이터" },
-  { lng: MARKER_CENTER.lng + 0.0015, lat: MARKER_CENTER.lat + 0.0006, title: "전망대",   description: "넓은 경치를 볼 수 있는 전망대" },
-  { lng: MARKER_CENTER.lng - 0.0013, lat: MARKER_CENTER.lat + 0.0014, title: "사진스팟", description: "인생샷 명소" },
-  { lng: MARKER_CENTER.lng + 0.0006, lat: MARKER_CENTER.lat - 0.0008, title: "문화의 거리", description: "지역 문화 예술 공간" },
-  { lng: MARKER_CENTER.lng - 0.0017, lat: MARKER_CENTER.lat - 0.0004, title: "쉼터",     description: "잔디와 벤치가 있는 쉼터" },
-  { lng: MARKER_CENTER.lng + 0.0013, lat: MARKER_CENTER.lat - 0.0005, title: "맛집거리", description: "다양한 음식점이 모인 거리" },
-  { lng: MARKER_CENTER.lng - 0.0004, lat: MARKER_CENTER.lat + 0.0017, title: "산책길",   description: "산책과 운동 겸하기 좋은 길" },
-];
+  const {
+    ghosts,
+    setGhosts,
+    score,
+    totalCaught,
+    resetGame,
+    catchGhost,
+    movementPatterns,
+  } = useGhostGame();
 
-mapboxgl.accessToken = CONFIG.mapboxToken;
-const coordKey = (coord) => `${coord[0].toFixed(8)},${coord[1].toFixed(8)}`;
-
-// Haversine 공식으로 두 좌표 간 거리 계산 (미터 단위)
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371000;
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-};
-
-const Map3D = () => {
-  // Refs
-  const mapContainer = useRef(null);
-  const map = useRef(null);
-  const domMarkerMap = useRef(new Map());
-  const geolocateControl = useRef(null);
-  const watchId = useRef(null);
-  const hasCenteredOnUser = useRef(false);
-  const isInitialized = useRef(false);
-
-  // rAF 스로틀링용
-  const rafId = useRef(null);
-  const scheduleMarkerUpdateRef = useRef(null);
-
-  // sourcedata 오프를 위한 핸들러 참조
-  const onSourceDataRef = useRef(null);
-
-  // AR 프리로드 1회만
-  const arPrefetchedRef = useRef(false);
-
-  // 지오로케이션 노이즈 컷
-  const lastLocRef = useRef(null);
-  const lastTsRef = useRef(0);
-
-  // State
-  const [userLocation, setUserLocation] = useState(null);
-  const [showARButton, setShowARButton] = useState(false);
-  const [closestMarker, setClosestMarker] = useState(null);
-  const [disabledMarkerTitles, setDisabledMarkerTitles] = useState([]);
-  const [isARActive, setIsARActive] = useState(false);
-  const [selectedMarkerData, setSelectedMarkerData] = useState(null);
-  const [isWalkMode, setIsWalkMode] = useState(false);
-  const isWalkModeRef = useRef(false);
-  const routeReqRef = useRef(0);
-
-  // 파생값
-  const totalMarkerCount = EXTRA_MARKERS.length;
-  const disabledCount = useMemo(() => {
-    const set = new Set(disabledMarkerTitles);
-    return EXTRA_MARKERS.reduce((acc, m) => acc + (set.has(m.title) ? 1 : 0), 0);
-  }, [disabledMarkerTitles]);
-  const disabledPct = totalMarkerCount ? Math.round((disabledCount / totalMarkerCount) * 100) : 0;
-
-  // 미리 계산된 활성 마커 (비활성 제외)
-  const activeMarkers = useMemo(
-    () => EXTRA_MARKERS.filter((m) => !disabledMarkerTitles.includes(m.title)),
-    [disabledMarkerTitles]
-  );
-
-  useEffect(() => {
-    isWalkModeRef.current = isWalkMode;
-    // 모드 바뀌면 마커 스타일/인터랙션 갱신
-    scheduleMarkerUpdate();
-  }, [isWalkMode]);
-
-  // 모바일용 로그 함수 (가볍게)
-  const mobileLog = (message) => {
-    const timestamp = new Date().toLocaleTimeString();
-    console.log(`[${timestamp}] ${message}`);
+  // GPS 거리 계산 함수
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371000;
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
-  const scheduleMarkerUpdate = () => {
-    // schedule 함수 인스턴스 보장
-    if (!scheduleMarkerUpdateRef.current) {
-      scheduleMarkerUpdateRef.current = () => {
-        if (rafId.current) return;
-        rafId.current = requestAnimationFrame(() => {
-          rafId.current = null;
-          updateDOMMarkers();
-        });
-      };
-    }
-    scheduleMarkerUpdateRef.current();
+  // ✅ 방위각 계산 (유령이 있는 방향)
+  const calculateBearing = (lat1, lon1, lat2, lon2) => {
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const toDeg = (rad) => (rad * 180) / Math.PI;
+
+    const dLon = toRad(lon2 - lon1);
+    const lat1Rad = toRad(lat1);
+    const lat2Rad = toRad(lat2);
+
+    const y = Math.sin(dLon) * Math.cos(lat2Rad);
+    const x =
+      Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+      Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+
+    let bearing = toDeg(Math.atan2(y, x));
+    return (bearing + 360) % 360; // 0-360도 범위로 정규화
   };
 
-  function getClosestMarkerAndDistance(userLoc, markers) {
-    if (!userLoc || markers.length === 0) {
-      return { nearest: null, distance: null };
-    }
-    let minDist = Infinity;
-    let nearest = null;
-    for (const m of markers) {
-      const d = calculateDistance(userLoc[1], userLoc[0], m.lat, m.lng);
-      if (d < minDist) {
-        minDist = d;
-        nearest = m;
-      }
-    }
-    return { nearest, distance: nearest ? Math.round(minDist) : null };
-  }
+  // ✅ 카메라 시야각 내에 있는지 확인
+  const isInCameraView = (ghostBearing, cameraBearing, fov = 60) => {
+    // 카메라 시야각의 절반
+    const halfFov = fov / 2;
 
-  useEffect(() => {
-    if (!userLocation) {
-      setClosestMarker(null);
-      setShowARButton(false);
-      return;
-    }
-    const { nearest, distance } = getClosestMarkerAndDistance(userLocation, activeMarkers);
-    const inRange = isWalkMode && nearest && distance <= 100;
-
-    // 근접 시 AR 오버레이 모듈 미리 로드 (최초 1회만)
-    if (inRange && !arPrefetchedRef.current) {
-      import("./ghost/SimpleAROverlay");
-      arPrefetchedRef.current = true;
+    // 두 각도의 차이 계산 (최단거리)
+    let angleDiff = Math.abs(ghostBearing - cameraBearing);
+    if (angleDiff > 180) {
+      angleDiff = 360 - angleDiff;
     }
 
-    setClosestMarker(inRange ? nearest : null);
-    setShowARButton(!!inRange);
-
-    mobileLog(
-      inRange
-        ? `가장 가까운 활성 마커: ${nearest.title} (${distance}m)`
-        : `100m 내 활성 마커 없음`
-    );
-  }, [userLocation, activeMarkers, isWalkMode]);
-
-  // 사용자 위치로 지도 센터링 (한번만)
-  const centerMapToUserLocation = (userCoords, zoomLevel = 16) => {
-    if (map.current && !hasCenteredOnUser.current) {
-      map.current.easeTo({ center: userCoords, zoom: zoomLevel, duration: 2000 });
-      hasCenteredOnUser.current = true;
-      mobileLog(`지도가 사용자 위치로 센터링됨: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`);
-    }
+    return angleDiff <= halfFov;
   };
 
-  // 실시간 위치 추적 시작 (노이즈 컷 포함)
-  const startLocationTracking = () => {
-    mobileLog("위치 추적 시작 시도...");
+  // ✅ AR 카메라 기반 유령 처리 함수
+  const getProcessedGhost = (ghost, index) => {
+    if (!supported) return ghost;
 
-    if (!navigator.geolocation) {
-      mobileLog("브라우저가 위치 서비스를 지원하지 않습니다");
-      return;
-    }
-    if (watchId.current) {
-      navigator.geolocation.clearWatch(watchId.current);
-    }
-
-    watchId.current = navigator.geolocation.watchPosition(
-      (position) => {
-        const { longitude, latitude } = position.coords;
-        const userCoords = [longitude, latitude];
-
-        const now = performance.now();
-        const movedEnough =
-          !lastLocRef.current ||
-          calculateDistance(lastLocRef.current[1], lastLocRef.current[0], userCoords[1], userCoords[0]) >= 5; // 5m+
-        const timeEnough = now - lastTsRef.current >= 800; // 0.8s+
-
-        if (!movedEnough && !timeEnough) return;
-
-        lastLocRef.current = userCoords;
-        lastTsRef.current = now;
-
-        setUserLocation(userCoords);
-        if (map.current && map.current.isStyleLoaded()) {
-          centerMapToUserLocation(userCoords);
-        }
-      },
-      (error) => {
-        const msg =
-          error.code === error.PERMISSION_DENIED
-            ? "위치 접근 권한 거부됨"
-            : error.code === error.POSITION_UNAVAILABLE
-            ? "위치 정보 사용 불가"
-            : error.code === error.TIMEOUT
-            ? "위치 요청 시간 초과"
-            : "위치 서비스 오류";
-        mobileLog(`${msg}: ${error.message}`);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
-    );
-  };
-
-  const stopLocationTracking = () => {
-    if (watchId.current) {
-      navigator.geolocation.clearWatch(watchId.current);
-      watchId.current = null;
-    }
-    mobileLog("위치 추적 중지됨");
-  };
-
-  // GeoJSON 생성 함수
-  const createGeojson = (excludeDestination = null) => {
-    const baseFeatures = [
-      {
-        type: "Feature",
-        properties: { id: "main", title: "전북대학교", description: "산책 프로젝트 출발지" },
-        geometry: { type: "Point", coordinates: [CONFIG.targetLng, CONFIG.targetLat] },
-      },
-      ...EXTRA_MARKERS.map((marker, index) => ({
-        type: "Feature",
-        properties: { id: `spot_${index}`, title: marker.title, description: marker.description },
-        geometry: { type: "Point", coordinates: [marker.lng, marker.lat] },
-      })),
-    ];
-
-    if (excludeDestination) {
-      return {
-        type: "FeatureCollection",
-        features: baseFeatures.filter((feature) => {
-          const [lng, lat] = feature.geometry.coordinates;
-          const [destLng, destLat] = excludeDestination;
-          return !(Math.abs(lng - destLng) < 0.000001 && Math.abs(lat - destLat) < 0.000001);
-        }),
-      };
-    }
-    return { type: "FeatureCollection", features: baseFeatures };
-  };
-
-  // 소스와 레이어 안전 제거 함수
-  const safeRemoveSourceAndLayers = (sourceId) => {
-    if (!map.current) return;
-    try {
-      const layerIds = { "walk-route": ["walk-route"], markers: ["clusters", "cluster-count"] };
-      (layerIds[sourceId] || []).forEach((layerId) => {
-        if (map.current.getLayer(layerId)) map.current.removeLayer(layerId);
-      });
-      if (map.current.getSource(sourceId)) map.current.removeSource(sourceId);
-    } catch (error) {
-      mobileLog(`소스 제거 중 오류 (무시됨): ${error.message}`);
-    }
-  };
-
-  const initializeMap = (center) => {
-    if (mapContainer.current) mapContainer.current.innerHTML = "";
-
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
-      center,
-      zoom: 15,
-      pitch: 60,
-      bearing: -17.6,
-      antialias: false,              // ✅ 성능 우선 (MSAA off)
-      preserveDrawingBuffer: false,  // ✅ 스크린샷 필요 없으면 off
-      renderWorldCopies: false,
-      localIdeographFontFamily:
-        "'Apple SD Gothic Neo','Noto Sans CJK KR','Malgun Gothic',sans-serif", // ✅ CJK 글리프 네트워크/CPU 절약
-    });
-
-    // 페이드 제거로 약간의 렌더 비용 감소
-    map.current.setFadeDuration(0);
-
-    map.current.addControl(new mapboxgl.NavigationControl({ visualizePitch: true, showCompass: true, showZoom: true }), "bottom-right");
-
-    geolocateControl.current = new mapboxgl.GeolocateControl({
-      positionOptions: { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
-      trackUserLocation: true,
-      showUserHeading: true,
-      showAccuracyCircle: true,
-    });
-    map.current.addControl(geolocateControl.current, "bottom-right");
-
-    geolocateControl.current.on("geolocate", (e) => {
-      const userCoords = [e.coords.longitude, e.coords.latitude];
-      setUserLocation(userCoords);
-      centerMapToUserLocation(userCoords);
-      mobileLog(`Geolocate 컨트롤로 위치 획득: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`);
-    });
-
-    geolocateControl.current.on("error", (e) => {
-      mobileLog(`Geolocate 컨트롤 오류: ${e.message}`);
-    });
-
-    map.current.on("load", () => {
-      try {
-        mobileLog("지도 로드 완료, 레이어 설정 시작");
-        setupMapLayers();
-
-        setTimeout(() => {
-          geolocateControl.current?.trigger();
-          // 초기 대기 시간 단축 (체감 반응↑)
-          setTimeout(() => startLocationTracking(), 700);
-        }, 600);
-      } catch (error) {
-        mobileLog(`지도 로드 후 초기화 오류: ${error.message}`);
-      }
-    });
-
-    map.current.on("error", (e) => {
-      mobileLog(`Mapbox 에러: ${e.message}`);
-    });
-  };
-
-  // 지도 초기화
-  useEffect(() => {
-    if (isInitialized.current || map.current) return;
-    isInitialized.current = true;
-
-    if (navigator.geolocation) {
-      mobileLog("초기 사용자 위치 요청 시작...");
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const userCoords = [position.coords.longitude, position.coords.latitude];
-          setUserLocation(userCoords);
-          mobileLog(`초기 사용자 위치로 지도 초기화: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`);
-          initializeMap(userCoords);
-          hasCenteredOnUser.current = true;
-        },
-        (error) => {
-          mobileLog(`초기 위치 가져오기 실패, CONFIG 좌표로 초기화: ${error.message}`);
-          initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    // 🎯 기존 orientation-fixed 로직 (그대로 유지)
+    if (ghost.type === "orientation-fixed") {
+      const alphaDiff = Math.min(
+        Math.abs(orientation.alpha - ghost.targetAlpha),
+        360 - Math.abs(orientation.alpha - ghost.targetAlpha)
       );
-    } else {
-      mobileLog("위치 서비스 미지원, CONFIG 좌표로 초기화");
-      initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
+      const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
+      const inView =
+        alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
+
+      if (!inView) {
+        return { ...ghost, pos: { x: -100, y: -100 } };
+      }
+      return ghost;
     }
+
+    // 🌍 GPS 유령: AR 카메라 시야각 기반 표시
+    if (ghost.type === "gps-fixed" && location && compass) {
+      // 거리 계산
+      const distance = calculateDistance(
+        location.latitude,
+        location.longitude,
+        ghost.gpsLat,
+        ghost.gpsLon
+      );
+
+      console.log(`👻 GPS 유령: 거리 ${distance.toFixed(1)}m`);
+
+      // 최대 표시 거리 체크
+      const maxDistance = ghost.maxVisibleDistance || 100;
+      if (distance > maxDistance) {
+        return {
+          ...ghost,
+          pos: { x: -100, y: -100 },
+          currentDistance: distance,
+          reason: "거리 초과",
+        };
+      }
+
+      // 유령이 있는 방향 계산
+      const ghostBearing = calculateBearing(
+        location.latitude,
+        location.longitude,
+        ghost.gpsLat,
+        ghost.gpsLon
+      );
+
+      // 현재 카메라가 바라보는 방향
+      const cameraBearing = compass.heading;
+
+      // ✅ 카메라 시야각 내에 있는지 확인
+      const inView = isInCameraView(ghostBearing, cameraBearing, 60); // 60도 시야각
+
+      console.log(
+        `📹 카메라 방향: ${cameraBearing.toFixed(
+          0
+        )}°, 유령 방향: ${ghostBearing.toFixed(0)}°, 시야 내: ${inView}`
+      );
+
+      if (!inView) {
+        return {
+          ...ghost,
+          pos: { x: -100, y: -100 },
+          currentDistance: distance,
+          ghostBearing: ghostBearing,
+          cameraBearing: cameraBearing,
+          reason: "시야각 밖",
+        };
+      }
+
+      // ✅ 시야각 내에 있으면 화면에 표시
+      // 카메라 중심에서 유령까지의 각도 차이를 화면 좌표로 변환
+      let angleDiff = ghostBearing - cameraBearing;
+      if (angleDiff > 180) angleDiff -= 360;
+      if (angleDiff < -180) angleDiff += 360;
+
+      // 화면 X 좌표 계산 (중심 50%, 좌우로 시야각에 따라 이동)
+      const screenX = 50 + (angleDiff / 60) * 80; // 60도 시야각을 80% 화면 너비에 매핑
+      const screenY = 50; // 화면 중앙 높이
+
+      // 거리에 따른 크기 조절
+      const sizeScale = Math.max(0.5, 50 / Math.max(distance, 1));
+
+      return {
+        ...ghost,
+        pos: { x: Math.max(10, Math.min(90, screenX)), y: screenY },
+        size: (ghost.size || 120) * sizeScale,
+        opacity: Math.max(0.7, 1 - distance / maxDistance),
+        currentDistance: distance,
+        ghostBearing: ghostBearing,
+        cameraBearing: cameraBearing,
+        reason: "표시됨",
+      };
+    }
+
+    // 👻 always-visible 로직 (그대로 유지)
+    return ghost;
+  };
+
+  // AR 열릴 때 한 번만 게임 리셋
+  useEffect(() => {
+    if (isActive) {
+      if (location) {
+        resetGame(location);
+      } else {
+        resetGame();
+      }
+    }
+  }, [isActive]);
+
+  // 카메라 설정 (그대로 유지)
+  useEffect(() => {
+    if (!isActive) return;
+    navigator.mediaDevices
+      .getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      })
+      .then((s) => {
+        if (videoRef.current) videoRef.current.srcObject = s;
+      })
+      .catch(() => alert("카메라 권한이 필요합니다"));
+    return () =>
+      videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
+  }, [isActive]);
+
+  // 실시간 움직임 로직 (always-visible만, 그대로 유지)
+  useEffect(() => {
+    if (!isActive || ghosts.length === 0) return;
+
+    const timers = ghosts
+      .map((gh, index) => {
+        if (gh.type === "orientation-fixed" || gh.type === "gps-fixed")
+          return null;
+
+        return setInterval(() => {
+          setGhosts((prevGhosts) => {
+            const newGhosts = [...prevGhosts];
+            if (
+              !newGhosts[index] ||
+              newGhosts[index].type === "orientation-fixed" ||
+              newGhosts[index].type === "gps-fixed"
+            )
+              return prevGhosts;
+
+            // 기존 움직임 로직...
+            const pattern =
+              movementPatterns[
+                Math.floor(Math.random() * movementPatterns.length)
+              ];
+            let { x, y } = newGhosts[index].pos;
+            const now = Date.now();
+
+            switch (pattern) {
+              case "random-jump":
+                x = Math.random() * 80 + 10;
+                y = Math.random() * 80 + 10;
+                break;
+              case "smooth-slide":
+                x = Math.max(10, Math.min(90, x + (Math.random() - 0.5) * 25));
+                y = Math.max(10, Math.min(90, y + (Math.random() - 0.5) * 25));
+                break;
+              // ... 기타 패턴들
+            }
+
+            newGhosts[index] = {
+              ...newGhosts[index],
+              pos: { x, y },
+              size:
+                Math.random() < 0.2
+                  ? Math.max(
+                      80,
+                      Math.min(
+                        250,
+                        newGhosts[index].size + (Math.random() - 0.5) * 30
+                      )
+                    )
+                  : newGhosts[index].size,
+              rotation:
+                Math.random() < 0.15
+                  ? (newGhosts[index].rotation + Math.random() * 60) % 360
+                  : newGhosts[index].rotation,
+            };
+
+            return newGhosts;
+          });
+        }, gh.speed);
+      })
+      .filter(Boolean);
 
     return () => {
-      // rAF 취소
-      if (rafId.current) cancelAnimationFrame(rafId.current);
-
-      if (watchId.current) {
-        navigator.geolocation.clearWatch(watchId.current);
-        watchId.current = null;
-      }
-
-      // DOM 마커 정리
-      domMarkerMap.current.forEach((rec) => {
-        if (rec?.marker) rec.marker.remove();
-        else if (rec?.remove) rec.remove();
-        if (rec?.root) rec.root.unmount();
-      });
-      domMarkerMap.current.clear();
-
-      if (map.current) {
-        try {
-          map.current.off("click", "clusters", handleClusterClick);
-          ["move", "zoom", "idle"].forEach((ev) => map.current.off(ev, scheduleMarkerUpdateRef.current));
-          if (onSourceDataRef.current) map.current.off("sourcedata", onSourceDataRef.current);
-          if (geolocateControl.current) map.current.removeControl(geolocateControl.current);
-        } catch (e) {}
-        map.current.remove();
-        map.current = null;
-      }
-
-      isInitialized.current = false;
-      mobileLog("지도 컴포넌트 정리 완료");
+      timers.forEach(clearInterval);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isActive, ghosts.length, movementPatterns, setGhosts]);
 
-  // 고정 위치 기반 길찾기 함수
-  const getRouteWithFixedLocation = async (fixedStartLocation, end) => {
-    if (!map.current || !map.current.isStyleLoaded()) {
-      mobileLog("스타일 미로딩: idle 이후 재시도");
-      map.current.once("idle", () => getRouteWithFixedLocation([...fixedStartLocation], [...end]));
-      return;
-    }
-
-    const myId = ++routeReqRef.current;
-    mobileLog(`route req #${myId} 시작`);
-
-    try {
-      const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${fixedStartLocation[0]},${fixedStartLocation[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&overview=full&access_token=${CONFIG.mapboxToken}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      mobileLog(`route req #${myId}: http=${res.status} code=${data?.code}`);
-
-      if (res.status !== 200 || data?.code !== "Ok" || !data?.routes?.length) {
-        mobileLog(`route req #${myId}: 경로 없음/에러`);
-        alert("경로를 찾지 못했어요. 잠시 후 다시 시도해주세요.");
-        return;
-      }
-
-      if (myId !== routeReqRef.current) {
-        mobileLog(`route req #${myId}: stale 응답, 그리기 스킵`);
-        return;
-      }
-
-      // 이전 라인 정리 후 그리기
-      safeRemoveSourceAndLayers("walk-route");
-
-      const routeData = data.routes[0];
-      const routeCoords = routeData.geometry.coordinates;
-      const enhancedRoute = [fixedStartLocation, ...routeCoords, end];
-      const filteredRoute = enhancedRoute.filter((coord, i) => {
-        if (i === 0) return true;
-        const p = enhancedRoute[i - 1];
-        const dx = coord[0] - p[0];
-        const dy = coord[1] - p[1];
-        return Math.sqrt(dx * dx + dy * dy) > 0.00001;
-        // 너무 촘촘한 점 제거
-      });
-
-      map.current.addSource("walk-route", {
-        type: "geojson",
-        data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: filteredRoute } },
-      });
-      map.current.addLayer({
-        id: "walk-route",
-        type: "line",
-        source: "walk-route",
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: { "line-color": "#ff2d55", "line-width": 6, "line-opacity": 0.95 },
-      });
-
-      const bounds = filteredRoute.reduce(
-        (b, c) => b.extend(c),
-        new mapboxgl.LngLatBounds(filteredRoute[0], filteredRoute[0])
-      );
-      map.current.fitBounds(bounds, { padding: 50 });
-    } catch (e) {
-      mobileLog(`❌ route req #${myId} 오류: ${e.message}`);
-      alert("길찾기 중 오류가 발생했습니다.");
-    }
-  };
-
-  const handleGaugeStop = () => {
-    setIsWalkMode(false);
-    setShowARButton(false);
-    setIsARActive(false);
-    clearRoute();
-    setClosestMarker(null);
-  };
-
-  // 길찾기 함수 (현재 위치 고정)
-  const getRoute = async (end) => {
-    if (!userLocation) {
-      mobileLog("❌ getRoute 호출됐지만 userLocation이 null");
-      alert("사용자 위치를 찾을 수 없습니다. 위치 서비스를 활성화해주세요.");
-      return;
-    }
-    const fixedLocation = [...userLocation];
-    mobileLog("getRoute: 현재 위치 고정됨");
-    return getRouteWithFixedLocation(fixedLocation, end);
-  };
-
-  // 경로 초기화 (마커 유지)
-  const clearRoute = () => {
-    safeRemoveSourceAndLayers("walk-route");
-    mobileLog("경로 초기화 완료 (마커 유지)");
-  };
-
-  // 마커 클릭 핸들러
-  const handlePinMarkerClick = (coords) => {
-    clearRoute();
-    mobileLog(`마커 클릭됨: [${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}]`);
-
-    if (userLocation) {
-      const fixedStartLocation = [...userLocation];
-      mobileLog(`위치 정보 고정됨: [${fixedStartLocation[0].toFixed(6)}, ${fixedStartLocation[1].toFixed(6)}]`);
-      getRouteWithFixedLocation(fixedStartLocation, coords);
-    } else {
-      mobileLog("❌ 사용자 위치 없음 - 강제로 위치 요청 시도");
-      if (!navigator.geolocation) {
-        alert("이 브라우저는 위치 서비스를 지원하지 않습니다.");
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const userCoords = [position.coords.longitude, position.coords.latitude];
-          const fixedStartLocation = [...userCoords];
-          setUserLocation(userCoords);
-          mobileLog(`✅ 위치 정보 재획득 및 고정: [${fixedStartLocation[0].toFixed(6)}, ${fixedStartLocation[1].toFixed(6)}]`);
-          setTimeout(() => getRouteWithFixedLocation(fixedStartLocation, coords), 50);
-        },
-        (error) => {
-          mobileLog(`❌ 위치 정보 재획득 실패: ${error.message}`);
-          alert(`위치 서비스 오류: ${error.message}\n\n해결방법:\n1. 브라우저 설정에서 위치 권한 허용\n2. 페이지 새로고침`);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    }
-  };
-
-  // AR 버튼 클릭 핸들러
-  const handleARButtonClick = () => {
-    if (!closestMarker) return;
-    setSelectedMarkerData({
-      coords: [closestMarker.lng, closestMarker.lat],
-      title: closestMarker.title,
-      description: closestMarker.description,
-      imageUrl: CONFIG.markerImageUrl,
-      id: closestMarker.title,
-    });
-    setIsARActive(true);
-    setDisabledMarkerTitles((prev) => [...prev, closestMarker.title]);
-    setClosestMarker(null);
-  };
-
-  // AR 종료 함수
-  const handleCloseAR = () => {
-    setIsARActive(false);
-    setSelectedMarkerData(null);
-    mobileLog("AR 오버레이 종료됨");
-  };
-
-  const handleClusterClick = (event) => {
-    const features = map.current.queryRenderedFeatures(event.point, { layers: ["clusters"] });
-    if (!features.length) return;
-
-    const { cluster_id: clusterId, point_count: pointCount } = features[0].properties;
-    const coordinates = features[0].geometry.coordinates.slice();
-
-    mobileLog(`클러스터 클릭됨: ${pointCount}개 마커`);
-
-    map.current.getSource("markers").getClusterExpansionZoom(clusterId, (err, zoom) => {
-      if (err) return;
-      const shouldZoom = window.confirm(`클러스터에 ${pointCount}개의 마커가 있습니다.\n확대하시겠습니까?`);
-      if (shouldZoom) {
-        map.current.easeTo({ center: coordinates, zoom });
-        mobileLog(`클러스터 확대: zoom ${zoom}`);
-      } else {
-        alert(`클러스터 정보\n마커 개수: ${pointCount}개\n좌표: ${coordinates[0].toFixed(4)}, ${coordinates[1].toFixed(4)}`);
-      }
-    });
-  };
-
-  const updateDOMMarkers = () => {
-    if (!map.current?.getSource("markers")) return;
-
-    try {
-      const features = map.current.querySourceFeatures("markers") || [];
-      const singlePoints = features.filter((f) => !f.properties.point_count);
-
-      const newKeys = new Set();
-
-      singlePoints.forEach((feature) => {
-        const coordArr = feature.geometry.coordinates;
-        const key = coordKey(coordArr);
-        const title = feature.properties?.title || "";
-
-        // 회색 처리/인터랙션
-        const visuallyDisabled = isWalkModeRef.current && disabledMarkerTitles.includes(title);
-        const interactive = isWalkModeRef.current && !visuallyDisabled;
-
-        newKeys.add(key);
-
-        const existing = domMarkerMap.current.get(key);
-        if (!existing) {
-          const element = document.createElement("div");
-          const root = createRoot(element);
-
-          root.render(
-            <PinMarker
-              imageUrl={CONFIG.markerImageUrl}
-              disabled={visuallyDisabled}
-              interactive={interactive}
-              onClick={() => handlePinMarkerClick(coordArr, feature)}
-            />
-          );
-
-          const marker = new mapboxgl.Marker(element).setLngLat(coordArr).addTo(map.current);
-
-          domMarkerMap.current.set(key, { marker, root, disabled: visuallyDisabled, interactive, title });
-        } else {
-          if (existing.disabled !== visuallyDisabled || existing.interactive !== interactive) {
-            existing.root.render(
-              <PinMarker
-                imageUrl={CONFIG.markerImageUrl}
-                disabled={visuallyDisabled}
-                interactive={interactive}
-                onClick={() => handlePinMarkerClick(coordArr, feature)}
-              />
-            );
-            existing.disabled = visuallyDisabled;
-            existing.interactive = interactive;
-          }
-        }
-      });
-
-      // 제거된 포인트 청소
-      Array.from(domMarkerMap.current.keys()).forEach((key) => {
-        if (!newKeys.has(key)) {
-          const rec = domMarkerMap.current.get(key);
-          rec.marker.remove();
-          rec.root.unmount();
-          domMarkerMap.current.delete(key);
-        }
-      });
-    } catch (error) {
-      mobileLog(`DOM 마커 업데이트 오류: ${error.message}`);
-    }
-  };
-
-  // 안전한 레이어 설정
-  const setupMapLayers = () => {
-    if (!map.current) return;
-
-    try {
-      safeRemoveSourceAndLayers("markers");
-
-      map.current.addSource("markers", {
-        type: "geojson",
-        data: createGeojson(),
-        cluster: true,
-        clusterMaxZoom: 17,
-        clusterRadius: 50,
-      });
-
-      map.current.addLayer({
-        id: "clusters",
-        type: "circle",
-        source: "markers",
-        filter: ["has", "point_count"],
-        paint: {
-          "circle-color": "#3A8049",
-          "circle-radius": ["step", ["get", "point_count"], 15, 7, 20, 15, 25],
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#3A8049",
-          "circle-pitch-scale": "viewport",
-        },
-      });
-
-      map.current.addLayer({
-        id: "cluster-count",
-        type: "symbol",
-        source: "markers",
-        filter: ["has", "point_count"],
-        layout: {
-          "text-field": "{point_count_abbreviated}",
-          "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
-          "text-size": 12,
-          "text-pitch-alignment": "viewport",
-          "text-rotation-alignment": "viewport",
-        },
-        paint: { "text-color": "#fff" },
-      });
-
-      map.current.on("click", "clusters", handleClusterClick);
-      map.current.on("mouseenter", "clusters", () => (map.current.getCanvas().style.cursor = "pointer"));
-      map.current.on("mouseleave", "clusters", () => (map.current.getCanvas().style.cursor = ""));
-
-      // 🔁 이동/줌/아이들 → rAF 스로틀 업데이트
-      ["move", "zoom", "idle"].forEach((event) => {
-        map.current.on(event, scheduleMarkerUpdateRef.current || scheduleMarkerUpdate);
-      });
-
-      // sourcedata 핸들러는 하나만 등록하고 cleanup에서 off
-      onSourceDataRef.current = (e) => {
-        if (e.sourceId === "markers" && e.isSourceLoaded) {
-          scheduleMarkerUpdate();
-        }
-      };
-      map.current.on("sourcedata", onSourceDataRef.current);
-
-      // 3D 빌딩
-      const layers = map.current.getStyle().layers;
-      const labelLayerId = layers.find((layer) => layer.type === "symbol" && layer.layout && layer.layout["text-field"])?.id;
-
-      map.current.addLayer(
-        {
-          id: "3d-buildings",
-          source: "composite",
-          "source-layer": "building",
-          filter: ["==", "extrude", "true"],
-          type: "fill-extrusion",
-          minzoom: 15,
-          paint: {
-            "fill-extrusion-color": "#aaa",
-            "fill-extrusion-height": ["interpolate", ["linear"], ["zoom"], 15, 0, 15.05, ["get", "height"]],
-            "fill-extrusion-base": ["interpolate", ["linear"], ["zoom"], 15, 0, 15.05, ["get", "min_height"]],
-            "fill-extrusion-opacity": 0.6,
-          },
-        },
-        labelLayerId
-      );
-
-      // 최초 1회
-      scheduleMarkerUpdate();
-      mobileLog("지도 레이어 설정 완료");
-    } catch (error) {
-      mobileLog(`레이어 설정 오류: ${error.message}`);
-    }
-  };
+  if (!isActive) return null;
 
   return (
-    <div className="map-container" style={{ width: "100%", height: "100vh", position: "relative" }}>
-      <div ref={mapContainer} className="mapbox-container" style={{ width: "100%", height: "100%" }} />
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        background: "#000",
+        zIndex: 9999,
+      }}
+    >
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      />
 
-      {!isWalkMode && (
-        <button
-          onClick={() => setIsWalkMode(true)}
-          aria-label="산책 시작"
-          style={{
-            position: "absolute",
-            left: "50%",
-            transform: "translateX(-50%)",
-            bottom: 24,
-            zIndex: 1200,
-            width: 64,
-            height: 64,
-            borderRadius: "50%",
-            background: "#3A8049",
-            color: "#fff",
-            border: "none",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-            fontWeight: 800,
-            fontSize: 14,
-            letterSpacing: 0.3,
-            cursor: "pointer",
-          }}
-        >
-          Start
-        </button>
-      )}
+      {/* ✅ 모든 유령 렌더링 (GPS 유령도 포함) */}
+      {ghosts.map((gh, i) => {
+        const processedGhost = getProcessedGhost(gh, i);
 
-      {/* 조건부 AR 버튼 */}
-      {showARButton && <ARButton onClick={handleARButtonClick} />}
+        // 화면 밖에 있으면 렌더링 안함
+        if (processedGhost.pos.x < 0) {
+          return null;
+        }
 
-      {isWalkMode && (
+        return (
+          <Ghost
+            key={`ghost-${i}`}
+            gh={processedGhost}
+            idx={i}
+            onClick={() => catchGhost(i)}
+          />
+        );
+      })}
+
+      <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
+
+      {/* ✅ AR 정보 표시 */}
+      {location && compass && (
         <div
           style={{
             position: "absolute",
-            top: "calc(16px + env(safe-area-inset-top))",
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 1200,
-            width: "min(360px, calc(100% - 32px))",
-            padding: "10px 12px",
-            borderRadius: 12,
-            background: "rgba(255,255,255,0.95)",
-            boxShadow: "0 6px 16px rgba(0,0,0,0.12)",
+            top: 100,
+            left: 20,
+            background: "rgba(0,0,0,0.8)",
+            color: "white",
+            padding: "12px",
+            borderRadius: "8px",
+            fontSize: "11px",
+            zIndex: 50,
+            minWidth: "250px",
           }}
         >
-          <div style={{ display: "grid", gridTemplateColumns: "72px 1fr auto", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <button
-              onClick={handleGaugeStop}
-              style={{ height: 28, borderRadius: 6, border: "none", background: "#ff2d55", color: "#fff", fontSize: 12, fontWeight: 800, letterSpacing: 0.2, cursor: "pointer" }}
-            >
-              종료
-            </button>
-
-            <div style={{ textAlign: "center", fontSize: 12, color: "#333", fontWeight: 600 }}>
-              {disabledCount} / {totalMarkerCount} ({disabledPct}%)
-            </div>
-
-            <span
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                background: "#E8F5E9",
-                color: "#2E7D32",
-                fontSize: 11,
-                fontWeight: 800,
-                lineHeight: 1,
-              }}
-            >
-              진행중
-            </span>
+          <div
+            style={{
+              color: "#4CAF50",
+              fontWeight: "bold",
+              marginBottom: "8px",
+            }}
+          >
+            🌍 AR 카메라 정보
           </div>
-
-          <div style={{ height: 6, borderRadius: 999, background: "#e9ecef", overflow: "hidden" }} aria-label={`비활성화 ${disabledPct}%`} title={`비활성화 ${disabledPct}%`}>
-            <div
-              style={{
-                width: `${disabledPct}%`,
-                height: "100%",
-                borderRadius: 999,
-                background: disabledPct < 50 ? "#3A8049" : disabledPct < 80 ? "#FF9800" : "#ff2d55",
-                transition: "width 300ms ease",
-              }}
-            />
+          <div>
+            📍 내 위치: {location.latitude.toFixed(6)},{" "}
+            {location.longitude.toFixed(6)}
           </div>
+          <div>🧭 카메라 방향: {compass.heading.toFixed(0)}°</div>
+          <div>🎯 시야각: 60° (좌우 30°씩)</div>
+
+          <hr style={{ margin: "8px 0", border: "1px solid #555" }} />
+
+          {/* ✅ 회전 유령 정보 추가 */}
+          {ghosts
+            .filter((g) => g.type === "orientation-fixed")
+            .map((gh, i) => {
+              const processedGhost = getProcessedGhost(gh, i);
+              const isVisible = processedGhost.pos && processedGhost.pos.x > 0;
+
+              return (
+                <div key={`orientation-${i}`} style={{ marginBottom: "12px" }}>
+                  <div style={{ color: "#FF6B6B", fontWeight: "bold" }}>
+                    🎯 회전감지 유령
+                  </div>
+                  <div>📐 목표 α각도: {gh.targetAlpha.toFixed(0)}°</div>
+                  <div>📐 목표 β각도: {gh.targetBeta.toFixed(0)}°</div>
+                  <div>⚖️ 허용 오차: ±{gh.tolerance}°</div>
+                  <div>📱 현재 α각도: {orientation.alpha.toFixed(0)}°</div>
+                  <div>📱 현재 β각도: {orientation.beta.toFixed(0)}°</div>
+
+                  {/* 각도 차이 계산 및 표시 */}
+                  {(() => {
+                    const alphaDiff = Math.min(
+                      Math.abs(orientation.alpha - gh.targetAlpha),
+                      360 - Math.abs(orientation.alpha - gh.targetAlpha)
+                    );
+                    const betaDiff = Math.abs(orientation.beta - gh.targetBeta);
+
+                    return (
+                      <>
+                        <div>📏 α 차이: {alphaDiff.toFixed(0)}°</div>
+                        <div>📏 β 차이: {betaDiff.toFixed(0)}°</div>
+                        <div
+                          style={{
+                            color: isVisible ? "#4CAF50" : "#FF9800",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          📺 상태: {isVisible ? "👁️ 보임" : "❌ 각도 불일치"}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              );
+            })}
+
+          {/* GPS 유령 정보 */}
+          {ghosts
+            .filter((g) => g.type === "gps-fixed")
+            .map((gh, i) => {
+              const processedGhost = getProcessedGhost(gh, i);
+
+              return (
+                <div key={i} style={{ marginTop: "8px" }}>
+                  <div style={{ color: "#FFD700", fontWeight: "bold" }}>
+                    👻 특정 위치 유령
+                  </div>
+                  <div>
+                    📍 유령 위치: {gh.gpsLat}, {gh.gpsLon}
+                  </div>
+                  <div>
+                    📏 거리: {processedGhost.currentDistance?.toFixed(1)}m
+                  </div>
+                  <div>
+                    🧭 유령 방향: {processedGhost.ghostBearing?.toFixed(0)}°
+                  </div>
+                  <div
+                    style={{
+                      color:
+                        processedGhost.reason === "표시됨"
+                          ? "#4CAF50"
+                          : "#FF9800",
+                    }}
+                  >
+                    📺 상태: {processedGhost.reason}
+                  </div>
+                </div>
+              );
+            })}
         </div>
       )}
 
-      {/* SimpleAROverlay – lazy + suspense */}
-      <Suspense fallback={null}>
-        <SimpleAROverlay isActive={isARActive} markerData={selectedMarkerData} onClose={handleCloseAR} />
-      </Suspense>
+      {/* 권한 요청 버튼 */}
+      {!supported && (
+        <button
+          onClick={() => {
+            if (
+              typeof DeviceOrientationEvent !== "undefined" &&
+              typeof DeviceOrientationEvent.requestPermission === "function"
+            ) {
+              DeviceOrientationEvent.requestPermission();
+            }
+          }}
+          style={{
+            position: "absolute",
+            top: 300,
+            left: 20,
+            background: "#4CAF50",
+            color: "white",
+            border: "none",
+            padding: "10px 15px",
+            borderRadius: "8px",
+            fontSize: "12px",
+            zIndex: 50,
+          }}
+        >
+          📱 센서 권한 요청
+        </button>
+      )}
+
+      {/* 닫기 버튼 */}
+      <button
+        onClick={onClose}
+        style={{
+          position: "absolute",
+          top: 20,
+          right: 20,
+          width: 60,
+          height: 60,
+          borderRadius: "50%",
+          fontSize: 28,
+          color: "#fff",
+          background: "#FF4444",
+          border: "none",
+          cursor: "pointer",
+          zIndex: 60,
+        }}
+      >
+        ×
+      </button>
+
+      {/* 게임 완료 메시지 */}
+      {ghosts.length === 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            background: "rgba(0,0,0,0.9)",
+            color: "white",
+            padding: "30px",
+            borderRadius: "20px",
+            textAlign: "center",
+            zIndex: 100,
+            border: "3px solid #FFD700",
+          }}
+        >
+          <h2 style={{ margin: "0 0 15px 0", color: "#FFD700" }}>
+            🎉 축하합니다! 🎉
+          </h2>
+          <p style={{ margin: "0", fontSize: "18px" }}>
+            모든 유령을 잡았습니다!
+          </p>
+        </div>
+      )}
 
       <style jsx>{`
-        @keyframes pulse {
+        @keyframes ghostCatch {
           0% {
-            opacity: 1;
+            transform: translate(-50%, -50%) scale(1) rotate(0deg);
+          }
+          25% {
+            transform: translate(-50%, -50%) scale(1.3) rotate(90deg);
           }
           50% {
-            opacity: 0.5;
+            transform: translate(-50%, -50%) scale(1.1) rotate(180deg);
+          }
+          75% {
+            transform: translate(-50%, -50%) scale(1.2) rotate(270deg);
           }
           100% {
-            opacity: 1;
-          }
-        }
-        @keyframes arButtonPulse {
-          0% {
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-          }
-          50% {
-            box-shadow: 0 4px 25px rgba(102, 126, 234, 0.4);
-          }
-          100% {
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transform: translate(-50%, -50%) scale(0) rotate(360deg);
           }
         }
       `}</style>
     </div>
   );
-};
-
-export default Map3D;
+}
