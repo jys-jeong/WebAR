@@ -3,13 +3,11 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { createRoot } from "react-dom/client";
 import { PinMarker } from "./PinMarker";
-// import SimpleAROverlay from "./ghost/SimpleAROverlay"; // ← 제거
 import ARButton from "./ARButton";
 
-// 🔹 AR 오버레이 lazy-load
+// AR lazy
 const SimpleAROverlay = React.lazy(() => import("./ghost/SimpleAROverlay"));
 
-// 상수 정의
 export const CONFIG = {
   targetLng: 127.1465,
   targetLat: 35.8477,
@@ -18,11 +16,8 @@ export const CONFIG = {
     "pk.eyJ1IjoiamVvbmd5ZXNlb25nIiwiYSI6ImNtZHJldDNkODBmMW4yaXNhOGE1eWg4ODcifQ.LNsrvvxhCIJ6Lvwc9c0tVg",
 };
 
-// const EXTRA_MARKERS = [...]  // (생략: 기존 주석 유지)
-
 const MARKER_CENTER = { lng: 126.82287685, lat: 35.18376162 };
 
-// 기준 좌표 중심으로 10개 마커 랜덤 배치 (약 100~200m 반경)
 export const EXTRA_MARKERS = [
   { lng: MARKER_CENTER.lng + 0.0012, lat: MARKER_CENTER.lat + 0.001,  title: "커피마을", description: "향긋한 커피가 있는 곳" },
   { lng: MARKER_CENTER.lng - 0.0011, lat: MARKER_CENTER.lat - 0.0007, title: "헬스존", description: "건강을 위한 헬스장" },
@@ -39,7 +34,6 @@ export const EXTRA_MARKERS = [
 mapboxgl.accessToken = CONFIG.mapboxToken;
 const coordKey = (coord) => `${coord[0].toFixed(8)},${coord[1].toFixed(8)}`;
 
-// Haversine 거리 (m)
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371000;
   const φ1 = (lat1 * Math.PI) / 180;
@@ -53,8 +47,16 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
+const formatDuration = (totalSec) => {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+    : `${m}:${String(s).padStart(2, "0")}`;
+};
+
 const Map3D = () => {
-  // Refs
   const mapContainer = useRef(null);
   const map = useRef(null);
   const domMarkerMap = useRef(new Map());
@@ -63,18 +65,24 @@ const Map3D = () => {
   const hasCenteredOnUser = useRef(false);
   const isInitialized = useRef(false);
 
-  // 🔹 rAF 스로틀링용
+  // rAF throttle
   const rafId = useRef(null);
   const scheduleMarkerUpdateRef = useRef(null);
 
-  // 🔹 AR 사전 프리로드 1회
+  // AR preload 1-shot
   const arPrefetchedRef = useRef(false);
 
-  // 🔹 GPS 노이즈 컷 기준 저장
+  // GPS noise cut refs
   const lastLocRef = useRef(null);
   const lastTsRef = useRef(0);
 
-  // State
+  // ▶️ Walk tracking refs
+  const walkStartTsRef = useRef(null);
+  const walkTimerRef = useRef(null);
+  const walkPrevRef = useRef(null);
+  const walkDistanceRef = useRef(0);
+
+  // UI state
   const [userLocation, setUserLocation] = useState(null);
   const [showARButton, setShowARButton] = useState(false);
   const [closestMarker, setClosestMarker] = useState(null);
@@ -88,6 +96,10 @@ const Map3D = () => {
   const isWalkModeRef = useRef(false);
   const routeReqRef = useRef(0);
 
+  // ⏱️/📏 Walk stats UI state (1초마다 갱신)
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [distanceM, setDistanceM] = useState(0);
+
   const totalMarkerCount = EXTRA_MARKERS.length;
   const disabledCount = React.useMemo(() => {
     const set = new Set(disabledMarkerTitles);
@@ -97,18 +109,17 @@ const Map3D = () => {
 
   useEffect(() => {
     isWalkModeRef.current = isWalkMode;
-    scheduleMarkerUpdate(); // 🔹 rAF 스로틀: 모드 바뀔 때
+    scheduleMarkerUpdate();
   }, [isWalkMode]);
 
   useEffect(() => {
     disabledTitlesRef.current = disabledMarkerTitles;
-    scheduleMarkerUpdate(); // 🔹 rAF 스로틀: 비활성 목록 바뀔 때
+    scheduleMarkerUpdate();
   }, [disabledMarkerTitles]);
 
-  // 가벼운 로그
   const mobileLog = (msg) => console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
 
-  // 🔹 rAF 스로틀링 스케줄러
+  // rAF throttle
   const scheduleMarkerUpdate = () => {
     if (!scheduleMarkerUpdateRef.current) {
       scheduleMarkerUpdateRef.current = () => {
@@ -139,49 +150,30 @@ const Map3D = () => {
       setShowARButton(false);
       return;
     }
-
-    const activeMarkers = EXTRA_MARKERS.filter(
-      (m) => !disabledMarkerTitles.includes(m.title)
-    );
-
-    const { nearest, distance } = getClosestMarkerAndDistance(
-      userLocation, activeMarkers
-    );
+    const activeMarkers = EXTRA_MARKERS.filter((m) => !disabledMarkerTitles.includes(m.title));
+    const { nearest, distance } = getClosestMarkerAndDistance(userLocation, activeMarkers);
     const inRange = isWalkMode && nearest && distance <= 100;
 
-    // 🔹 근접 시 AR 모듈 사전 프리로드 (최초 1회)
     if (inRange && !arPrefetchedRef.current) {
       import("./ghost/SimpleAROverlay");
       arPrefetchedRef.current = true;
     }
-
     setClosestMarker(inRange ? nearest : null);
     setShowARButton(!!inRange);
-
-    mobileLog(
-      inRange
-        ? `가장 가까운 활성 마커: ${nearest.title} (${distance}m)`
-        : `100m 내 활성 마커 없음`
-    );
   }, [userLocation, disabledMarkerTitles, isWalkMode]);
 
   const centerMapToUserLocation = (userCoords, zoomLevel = 16) => {
     if (map.current && !hasCenteredOnUser.current) {
       map.current.easeTo({ center: userCoords, zoom: zoomLevel, duration: 2000 });
       hasCenteredOnUser.current = true;
-      mobileLog(`지도가 사용자 위치로 센터링됨: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`);
     }
   };
 
-  // 🔹 GPS watchPosition with 노이즈 컷(5m/0.8s)
+  // GPS watch + noise cut + distance accumulate
   const startLocationTracking = () => {
-    mobileLog("위치 추적 시작 시도...");
-    if (!navigator.geolocation) {
-      mobileLog("브라우저가 위치 서비스를 지원하지 않습니다");
-      return;
-    }
-    if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
+    if (!navigator.geolocation) return;
 
+    if (watchId.current) navigator.geolocation.clearWatch(watchId.current);
     watchId.current = navigator.geolocation.watchPosition(
       (position) => {
         const { longitude, latitude } = position.coords;
@@ -195,23 +187,30 @@ const Map3D = () => {
             userCoords[1], userCoords[0]
           ) >= 5; // ≥ 5m
         const timeEnough = now - lastTsRef.current >= 800; // ≥ 0.8s
+        if (!movedEnough && !timeEnough) return;
 
-        if (!movedEnough && !timeEnough) return; // 🔹 노이즈 컷
+        // ⛳️ 산책 중 거리 누적
+        if (isWalkModeRef.current && walkStartTsRef.current) {
+          if (walkPrevRef.current) {
+            const seg = calculateDistance(
+              walkPrevRef.current[1], walkPrevRef.current[0],
+              userCoords[1], userCoords[0]
+            );
+            if (seg >= 1) { // 1m 미만 노이즈 무시
+              walkDistanceRef.current += seg;
+            }
+          }
+          walkPrevRef.current = userCoords;
+        }
 
         lastLocRef.current = userCoords;
         lastTsRef.current = now;
 
         setUserLocation(userCoords);
-        if (map.current && map.current.isStyleLoaded()) {
-          centerMapToUserLocation(userCoords);
-        }
+        if (map.current?.isStyleLoaded()) centerMapToUserLocation(userCoords);
       },
       (error) => {
-        const msg =
-          error.code === error.PERMISSION_DENIED ? "권한 거부" :
-          error.code === error.POSITION_UNAVAILABLE ? "위치 사용 불가" :
-          error.code === error.TIMEOUT ? "요청 시간 초과" : "위치 서비스 오류";
-        mobileLog(`${msg}: ${error.message}`);
+        console.warn("geo error", error);
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
     );
@@ -222,7 +221,6 @@ const Map3D = () => {
       navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null;
     }
-    mobileLog("위치 추적 중지됨");
   };
 
   const createGeojson = (excludeDestination = null) => {
@@ -260,9 +258,7 @@ const Map3D = () => {
         if (map.current.getLayer(layerId)) map.current.removeLayer(layerId);
       });
       if (map.current.getSource(sourceId)) map.current.removeSource(sourceId);
-    } catch (e) {
-      mobileLog(`소스 제거 중 오류(무시): ${e.message}`);
-    }
+    } catch {}
   };
 
   const initializeMap = (center) => {
@@ -271,9 +267,7 @@ const Map3D = () => {
       container: mapContainer.current,
       style: "mapbox://styles/mapbox/streets-v12",
       center, zoom: 15, pitch: 60, bearing: -17.6,
-      antialias: true,
-      preserveDrawingBuffer: true,
-      renderWorldCopies: false,
+      antialias: true, preserveDrawingBuffer: true, renderWorldCopies: false,
     });
 
     map.current.addControl(
@@ -292,29 +286,14 @@ const Map3D = () => {
       const userCoords = [e.coords.longitude, e.coords.latitude];
       setUserLocation(userCoords);
       centerMapToUserLocation(userCoords);
-      mobileLog(`Geolocate 위치 획득: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`);
-    });
-
-    geolocateControl.current.on("error", (e) => {
-      mobileLog(`Geolocate 오류: ${e.message}`);
     });
 
     map.current.on("load", () => {
-      try {
-        mobileLog("지도 로드 완료, 레이어 설정 시작");
-        setupMapLayers();
-
-        setTimeout(() => {
-          geolocateControl.current?.trigger();
-          setTimeout(() => startLocationTracking(), 2000);
-        }, 1000);
-      } catch (error) {
-        mobileLog(`로드 후 초기화 오류: ${error.message}`);
-      }
-    });
-
-    map.current.on("error", (e) => {
-      mobileLog(`Mapbox 에러: ${e.message}`);
+      setupMapLayers();
+      setTimeout(() => {
+        geolocateControl.current?.trigger();
+        setTimeout(() => startLocationTracking(), 2000);
+      }, 1000);
     });
   };
 
@@ -323,33 +302,24 @@ const Map3D = () => {
     isInitialized.current = true;
 
     if (navigator.geolocation) {
-      mobileLog("초기 사용자 위치 요청...");
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const userCoords = [pos.coords.longitude, pos.coords.latitude];
           setUserLocation(userCoords);
-          mobileLog(`초기 위치로 지도 초기화: [${userCoords[0].toFixed(6)}, ${userCoords[1].toFixed(6)}]`);
           initializeMap(userCoords);
           hasCenteredOnUser.current = true;
         },
-        (error) => {
-          mobileLog(`초기 위치 실패, 기본 좌표로 초기화: ${error.message}`);
-          initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
-        },
+        () => initializeMap([CONFIG.targetLng, CONFIG.targetLat]),
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
       );
     } else {
-      mobileLog("위치 서비스 미지원, 기본 좌표로 초기화");
       initializeMap([CONFIG.targetLng, CONFIG.targetLat]);
     }
 
     return () => {
       if (rafId.current) cancelAnimationFrame(rafId.current);
-
-      if (watchId.current) {
-        navigator.geolocation.clearWatch(watchId.current);
-        watchId.current = null;
-      }
+      if (walkTimerRef.current) clearInterval(walkTimerRef.current);
+      stopLocationTracking();
 
       domMarkerMap.current.forEach((rec) => {
         rec?.marker?.remove?.();
@@ -364,49 +334,36 @@ const Map3D = () => {
             map.current.off(ev, scheduleMarkerUpdateRef.current || updateDOMMarkers)
           );
           if (geolocateControl.current) map.current.removeControl(geolocateControl.current);
-        } catch (e) {}
+        } catch {}
         map.current.remove();
         map.current = null;
       }
-
       isInitialized.current = false;
-      mobileLog("지도 컴포넌트 정리 완료");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getRouteWithFixedLocation = async (fixedStartLocation, end) => {
     if (!map.current || !map.current.isStyleLoaded()) {
-      mobileLog("스타일 미로딩: idle 이후 재시도");
       map.current.once("idle", () =>
         getRouteWithFixedLocation([...fixedStartLocation], [...end])
       );
       return;
     }
-
     const myId = ++routeReqRef.current;
-    mobileLog(`route req #${myId} 시작`);
-
     try {
       const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${fixedStartLocation[0]},${fixedStartLocation[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&overview=full&access_token=${CONFIG.mapboxToken}`;
       const res = await fetch(url);
       const data = await res.json();
-      mobileLog(`route req #${myId}: http=${res.status} code=${data?.code}`);
-
       if (res.status !== 200 || data?.code !== "Ok" || !data?.routes?.length) {
-        mobileLog(`route req #${myId}: 경로 없음/에러`);
         alert("경로를 찾지 못했어요. 잠시 후 다시 시도해주세요.");
         return;
       }
-      if (myId !== routeReqRef.current) {
-        mobileLog(`route req #${myId}: stale 응답, 스킵`);
-        return;
-      }
+      if (myId !== routeReqRef.current) return;
 
       safeRemoveSourceAndLayers("walk-route");
 
-      const routeData = data.routes[0];
-      const routeCoords = routeData.geometry.coordinates;
+      const routeCoords = data.routes[0].geometry.coordinates;
       const enhancedRoute = [fixedStartLocation, ...routeCoords, end];
       const filteredRoute = enhancedRoute.filter((coord, i) => {
         if (i === 0) return true;
@@ -434,56 +391,73 @@ const Map3D = () => {
       );
       map.current.fitBounds(bounds, { padding: 50 });
     } catch (e) {
-      mobileLog(`❌ route req #${myId} 오류: ${e.message}`);
       alert("길찾기 중 오류가 발생했습니다.");
-    } finally {}
+    }
+  };
+
+  // ▶️ Start / ⏹️ Stop
+  const handleStart = () => {
+    setIsWalkMode(true);
+    // 초기화
+    walkStartTsRef.current = performance.now();
+    walkDistanceRef.current = 0;
+    walkPrevRef.current = userLocation || null; // 현재 위치를 출발점으로
+    setElapsedSec(0);
+    setDistanceM(0);
+    // 1초마다 UI 갱신
+    if (walkTimerRef.current) clearInterval(walkTimerRef.current);
+    walkTimerRef.current = setInterval(() => {
+      if (!walkStartTsRef.current) return;
+      const sec = Math.floor((performance.now() - walkStartTsRef.current) / 1000);
+      setElapsedSec(sec);
+      setDistanceM(Math.round(walkDistanceRef.current));
+    }, 1000);
   };
 
   const handleGaugeStop = () => {
     setIsWalkMode(false);
     setShowARButton(false);
     setIsARActive(false);
-    clearRoute();
+    safeRemoveSourceAndLayers("walk-route");
     setClosestMarker(null);
+
+    if (walkTimerRef.current) clearInterval(walkTimerRef.current);
+    walkTimerRef.current = null;
+    walkStartTsRef.current = null;
+    walkPrevRef.current = null;
+    // 마지막 값은 유지하고 싶으면 아래 초기화는 지워도 됨
+    setElapsedSec(0);
+    setDistanceM(0);
   };
 
   const getRoute = async (end) => {
     if (!userLocation) {
-      mobileLog("❌ getRoute 호출: userLocation 없음");
       alert("사용자 위치를 찾을 수 없습니다. 위치 서비스를 활성화해주세요.");
       return;
     }
     const fixedLocation = [...userLocation];
-    mobileLog("getRoute: 현재 위치 고정");
     return getRouteWithFixedLocation(fixedLocation, end);
   };
 
   const clearRoute = () => {
     safeRemoveSourceAndLayers("walk-route");
-    mobileLog("경로 초기화 완료 (마커 유지)");
   };
 
   const handlePinMarkerClick = (coords) => {
     clearRoute();
-    mobileLog(`마커 클릭: [${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}]`);
-
     if (userLocation) {
       const fixedStartLocation = [...userLocation];
-      mobileLog(`위치 고정: [${fixedStartLocation[0].toFixed(6)}, ${fixedStartLocation[1].toFixed(6)}]`);
       getRouteWithFixedLocation(fixedStartLocation, coords);
     } else {
-      mobileLog("❌ 사용자 위치 없음 - 재요청");
       if (!navigator.geolocation) return alert("이 브라우저는 위치 서비스를 지원하지 않습니다.");
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const userCoords = [position.coords.longitude, position.coords.latitude];
           const fixedStartLocation = [...userCoords];
           setUserLocation(userCoords);
-          mobileLog(`✅ 위치 재획득 및 고정: [${fixedStartLocation[0].toFixed(6)}, ${fixedStartLocation[1].toFixed(6)}]`);
           setTimeout(() => getRouteWithFixedLocation(fixedStartLocation, coords), 100);
         },
         (error) => {
-          mobileLog(`❌ 위치 재획득 실패: ${error.message}`);
           alert(`위치 서비스 오류: ${error.message}\n\n해결방법:\n1. 브라우저 설정에서 위치 권한 허용\n2. 페이지 새로고침`);
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -508,27 +482,17 @@ const Map3D = () => {
   const handleCloseAR = () => {
     setIsARActive(false);
     setSelectedMarkerData(null);
-    mobileLog("AR 오버레이 종료");
   };
 
   const handleClusterClick = (event) => {
     const features = map.current.queryRenderedFeatures(event.point, { layers: ["clusters"] });
     if (!features.length) return;
-
     const { cluster_id: clusterId, point_count: pointCount } = features[0].properties;
     const coordinates = features[0].geometry.coordinates.slice();
-
-    mobileLog(`클러스터 클릭: ${pointCount}개`);
-
     map.current.getSource("markers").getClusterExpansionZoom(clusterId, (err, zoom) => {
       if (err) return;
       const shouldZoom = window.confirm(`클러스터에 ${pointCount}개의 마커가 있습니다.\n확대하시겠습니까?`);
-      if (shouldZoom) {
-        map.current.easeTo({ center: coordinates, zoom });
-        mobileLog(`클러스터 확대: zoom ${zoom}`);
-      } else {
-        alert(`클러스터 정보\n마커 개수: ${pointCount}개\n좌표: ${coordinates[0].toFixed(4)}, ${coordinates[1].toFixed(4)}`);
-      }
+      if (shouldZoom) map.current.easeTo({ center: coordinates, zoom });
     });
   };
 
@@ -587,9 +551,7 @@ const Map3D = () => {
           domMarkerMap.current.delete(key);
         }
       });
-    } catch (e) {
-      mobileLog(`DOM 마커 업데이트 오류: ${e.message}`);
-    }
+    } catch {}
   };
 
   const setupMapLayers = () => {
@@ -638,20 +600,16 @@ const Map3D = () => {
       map.current.on("mouseenter", "clusters", () => (map.current.getCanvas().style.cursor = "pointer"));
       map.current.on("mouseleave", "clusters", () => (map.current.getCanvas().style.cursor = ""));
 
-      // 🔹 move/zoom/idle → rAF 스로틀 업데이트
       ["move", "zoom", "idle"].forEach((event) => {
         map.current.on(event, scheduleMarkerUpdateRef.current || scheduleMarkerUpdate);
       });
 
-      // 🔹 소스 로드 완료 시에도 스로틀 업데이트
       const handleSourceData = (e) => {
-        if (e.sourceId === "markers" && e.isSourceLoaded) {
-          scheduleMarkerUpdate();
-        }
+        if (e.sourceId === "markers" && e.isSourceLoaded) scheduleMarkerUpdate();
       };
       map.current.on("sourcedata", handleSourceData);
 
-      // 3D Buildings (기존과 동일)
+      // 3d buildings (원본 유지)
       const layers = map.current.getStyle().layers;
       const labelLayerId = layers.find(
         (layer) => layer.type === "symbol" && layer.layout && layer.layout["text-field"]
@@ -675,13 +633,8 @@ const Map3D = () => {
         labelLayerId
       );
 
-      // 최초 1회 갱신
       scheduleMarkerUpdate();
-
-      mobileLog("지도 레이어 설정 완료");
-    } catch (error) {
-      mobileLog(`레이어 설정 오류: ${error.message}`);
-    }
+    } catch {}
   };
 
   return (
@@ -690,7 +643,7 @@ const Map3D = () => {
 
       {!isWalkMode && (
         <button
-          onClick={() => setIsWalkMode(true)}
+          onClick={handleStart}
           aria-label="산책 시작"
           style={{
             position: "absolute", left: "50%", transform: "translateX(-50%)",
@@ -703,10 +656,10 @@ const Map3D = () => {
         </button>
       )}
 
-      {/* 조건부 AR 버튼 */}
+      {/* AR 버튼 */}
       {showARButton && <ARButton onClick={handleARButtonClick} />}
 
-      {/* 상단 진행 박스 (기존과 동일) */}
+      {/* 상단 진행 박스 + ⏱️/📏 표시 */}
       {isWalkMode && (
         <div
           style={{
@@ -724,13 +677,7 @@ const Map3D = () => {
         >
           <div style={{ display: "grid", gridTemplateColumns: "72px 1fr auto", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <button
-              onClick={() => {
-                setIsWalkMode(false);
-                setShowARButton(false);
-                setIsARActive(false);
-                safeRemoveSourceAndLayers("walk-route");
-                setClosestMarker(null);
-              }}
+              onClick={handleGaugeStop}
               style={{ height: 28, borderRadius: 6, border: "none", background: "#ff2d55", color: "#fff", fontSize: 12, fontWeight: 800, letterSpacing: 0.2, cursor: "pointer" }}
             >
               종료
@@ -742,6 +689,13 @@ const Map3D = () => {
               진행중
             </span>
           </div>
+
+          {/* ⏱️ 시간 · 🚶 거리 */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12, color: "#333", fontWeight: 700 }}>
+            <div>⏱ {formatDuration(elapsedSec)}</div>
+            <div>🚶 {distanceM} m</div>
+          </div>
+
           <div style={{ height: 6, borderRadius: 999, background: "#e9ecef", overflow: "hidden" }}>
             <div
               style={{
@@ -754,31 +708,13 @@ const Map3D = () => {
         </div>
       )}
 
-      {/* 🔹 AR 오버레이 lazy + Suspense */}
       <Suspense fallback={null}>
         <SimpleAROverlay
           isActive={isARActive}
           markerData={selectedMarkerData}
-          onClose={() => {
-            setIsARActive(false);
-            setSelectedMarkerData(null);
-            mobileLog("AR 오버레이 종료");
-          }}
+          onClose={handleCloseAR}
         />
       </Suspense>
-
-      <style jsx>{`
-        @keyframes pulse {
-          0% { opacity: 1; }
-          50% { opacity: 0.5; }
-          100% { opacity: 1; }
-        }
-        @keyframes arButtonPulse {
-          0% { box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-          50% { box-shadow: 0 4px 25px rgba(102,126,234,0.4); }
-          100% { box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-        }
-      `}</style>
     </div>
   );
 };
