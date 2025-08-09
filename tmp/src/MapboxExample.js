@@ -390,7 +390,7 @@ const Map3D = () => {
 
     try {
       const layerIds = {
-        route: ["route"],
+        "walk-route": ["walk-route"],
         markers: ["clusters", "cluster-count"],
       };
 
@@ -572,6 +572,15 @@ const Map3D = () => {
 
   // 고정 위치 기반 길찾기 함수
   const getRouteWithFixedLocation = async (fixedStartLocation, end) => {
+    // (2) 스타일 로딩 가드: 스타일이 아직이면 idle 후 재시도
+    if (!map.current || !map.current.isStyleLoaded()) {
+      mobileLog("스타일 미로딩: idle 이후 재시도", "warning");
+      map.current.once("idle", () =>
+        getRouteWithFixedLocation([...fixedStartLocation], [...end])
+      );
+      return;
+    }
+
     setIsRouting(true);
     mobileLog(
       `🗺️ 고정 위치 기반 길찾기 시작: [${fixedStartLocation[0].toFixed(
@@ -583,94 +592,95 @@ const Map3D = () => {
     );
 
     try {
-      const response = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/walking/${fixedStartLocation[0]},${fixedStartLocation[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&access_token=${CONFIG.mapboxToken}&overview=full`
-      );
-
-      const data = await response.json();
-
-      if (data.routes?.length > 0) {
-        const routeData = data.routes[0];
-        const routeCoords = routeData.geometry.coordinates;
-
-        const enhancedRoute = [fixedStartLocation, ...routeCoords, end];
-        const filteredRoute = enhancedRoute.filter((coord, index) => {
-          if (index === 0) return true;
-          const prevCoord = enhancedRoute[index - 1];
-          const distance = Math.sqrt(
-            Math.pow(coord[0] - prevCoord[0], 2) +
-              Math.pow(coord[1] - prevCoord[1], 2)
-          );
-          return distance > 0.00001;
-        });
-
-        safeRemoveSourceAndLayers("route");
-
-        map.current.addSource("route", {
-          type: "geojson",
-          data: {
-            type: "Feature",
-            properties: {},
-            geometry: {
-              type: "LineString",
-              coordinates: filteredRoute,
-            },
-          },
-        });
-
-        map.current.addLayer({
-          id: "route",
-          type: "line",
-          source: "route",
-          layout: {
-            "line-join": "round",
-            "line-cap": "round",
-          },
-          paint: {
-            "line-color": "#3A8049",
-            "line-width": 6,
-            "line-opacity": 0.8,
-          },
-        });
-
-        const bounds = filteredRoute.reduce(
-          (bounds, coord) => bounds.extend(coord),
-          new mapboxgl.LngLatBounds(filteredRoute[0], filteredRoute[0])
-        );
-
-        map.current.fitBounds(bounds, { padding: 50 });
-
-        const distance = (routeData.distance / 1000).toFixed(1);
-        const duration = Math.round(routeData.duration / 60);
-
-        const destination = EXTRA_MARKERS.find(
-          (marker) =>
-            Math.abs(marker.lng - end[0]) < 0.000001 &&
-            Math.abs(marker.lat - end[1]) < 0.000001
-        );
-
-        // 현재 위치와 고정 위치가 다른 경우 알림에 표시
-        const currentLocation = userLocation;
-        const locationChanged =
-          currentLocation &&
-          (Math.abs(currentLocation[0] - fixedStartLocation[0]) > 0.00001 ||
-            Math.abs(currentLocation[1] - fixedStartLocation[1]) > 0.00001);
-
-        alert(
-          `🚶‍♂️ ${
-            destination?.title || "목적지"
-          }로 가는 경로\n📏 거리: ${distance}km\n⏰ 예상 시간: ${duration}분\n📍 경로 포인트: ${
-            filteredRoute.length
-          }개${
-            locationChanged
-              ? "\n\n⚠️ 마커 클릭 시점의 위치를 기준으로 계산된 경로입니다."
-              : ""
-          }`
-        );
-      } else {
-        mobileLog("❌ 경로를 찾을 수 없음", "error");
-        alert("경로를 찾을 수 없습니다.");
+      // (3) Directions 요청 + 로깅
+      const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${fixedStartLocation[0]},${fixedStartLocation[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&overview=full&access_token=${CONFIG.mapboxToken}`;
+      const res = await fetch(url);
+      let data;
+      try {
+        data = await res.json();
+      } catch (e) {
+        mobileLog(`directions JSON 파싱 실패: ${e.message}`, "error");
+        throw e;
       }
+
+      mobileLog(`directions: http=${res.status} code=${data?.code}`, "info");
+
+      if (res.status !== 200 || data?.code !== "Ok" || !data?.routes?.length) {
+        mobileLog(`경로 에러/없음: ${JSON.stringify(data)}`, "error");
+        alert("경로를 찾지 못했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+
+      const routeData = data.routes[0];
+      const routeCoords = routeData.geometry.coordinates;
+
+      const enhancedRoute = [fixedStartLocation, ...routeCoords, end];
+      const filteredRoute = enhancedRoute.filter((coord, index) => {
+        if (index === 0) return true;
+        const prev = enhancedRoute[index - 1];
+        const dx = coord[0] - prev[0];
+        const dy = coord[1] - prev[1];
+        return Math.sqrt(dx * dx + dy * dy) > 0.00001;
+      });
+
+      // 기존 코드에서는 safeRemoveSourceAndLayers("route")였는데,
+      // 너가 ID를 walk-route로 쓰고 있으니 여기서도 walk-route로!
+      safeRemoveSourceAndLayers("walk-route");
+
+      if (map.current.getLayer("walk-route"))
+        map.current.removeLayer("walk-route");
+      if (map.current.getSource("walk-route"))
+        map.current.removeSource("walk-route");
+
+      map.current.addSource("walk-route", {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: { type: "LineString", coordinates: filteredRoute },
+        },
+      });
+
+      map.current.addLayer({
+        id: "walk-route",
+        type: "line",
+        source: "walk-route",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "#ff2d55",
+          "line-width": 6,
+          "line-opacity": 0.95,
+        },
+      });
+
+      const bounds = filteredRoute.reduce(
+        (b, c) => b.extend(c),
+        new mapboxgl.LngLatBounds(filteredRoute[0], filteredRoute[0])
+      );
+      map.current.fitBounds(bounds, { padding: 50 });
+
+      const distance = (routeData.distance / 1000).toFixed(1);
+      const duration = Math.round(routeData.duration / 60);
+
+      const destination = EXTRA_MARKERS.find(
+        (m) =>
+          Math.abs(m.lng - end[0]) < 0.000001 &&
+          Math.abs(m.lat - end[1]) < 0.000001
+      );
+      const locationChanged =
+        userLocation &&
+        (Math.abs(userLocation[0] - fixedStartLocation[0]) > 0.00001 ||
+          Math.abs(userLocation[1] - fixedStartLocation[1]) > 0.00001);
+
+      alert(
+        `🚶‍♂️ ${destination?.title || "목적지"}로 가는 경로` +
+          `\n📏 거리: ${distance}km` +
+          `\n⏰ 예상 시간: ${duration}분` +
+          `\n📍 경로 포인트: ${filteredRoute.length}개` +
+          (locationChanged
+            ? "\n\n⚠️ 마커 클릭 시점의 위치 기준으로 계산됨."
+            : "")
+      );
     } catch (error) {
       mobileLog(`❌ 길찾기 오류: ${error.message}`, "error");
       alert("길찾기 중 오류가 발생했습니다.");
@@ -695,7 +705,7 @@ const Map3D = () => {
 
   // ✅ 경로 초기화 (마커 유지)
   const clearRoute = () => {
-    safeRemoveSourceAndLayers("route");
+    safeRemoveSourceAndLayers("walk-route");
     setDestinationPoint(null);
     // ✅ updateClusterData 호출 제거 - 마커들을 유지
     // updateClusterData(null); // 이 줄을 제거하거나 주석 처리
@@ -849,7 +859,8 @@ const Map3D = () => {
         const key = coordKey(coordArr);
         const title = feature.properties?.title || "";
         // ✅ 2) 회색 처리 여부와 클릭 가능 여부를 분리해서 계산
-        const visuallyDisabled = isWalkModeRef.current && disabledTitlesRef.current.includes(title); // 회색 처리 기준 = disabledMarkerTitles
+        const visuallyDisabled =
+          isWalkModeRef.current && disabledTitlesRef.current.includes(title); // 회색 처리 기준 = disabledMarkerTitles
         const interactive = isWalkModeRef.current && !visuallyDisabled;
         newKeys.add(key);
 
@@ -881,18 +892,21 @@ const Map3D = () => {
           });
         } else {
           // 기존 마커도 두 값이 바뀌었을 때만 재렌더
-          if (existing.disabled !== visuallyDisabled || existing.interactive !== interactive) {
-          existing.root.render(
-            <PinMarker
-              imageUrl={CONFIG.markerImageUrl}
-              disabled={visuallyDisabled}
-              interactive={interactive}
-              onClick={() => handlePinMarkerClick(coordArr, feature)}
-            />
-          );
-          existing.disabled = visuallyDisabled;
-          existing.interactive = interactive;
-        }
+          if (
+            existing.disabled !== visuallyDisabled ||
+            existing.interactive !== interactive
+          ) {
+            existing.root.render(
+              <PinMarker
+                imageUrl={CONFIG.markerImageUrl}
+                disabled={visuallyDisabled}
+                interactive={interactive}
+                onClick={() => handlePinMarkerClick(coordArr, feature)}
+              />
+            );
+            existing.disabled = visuallyDisabled;
+            existing.interactive = interactive;
+          }
         }
       });
 
