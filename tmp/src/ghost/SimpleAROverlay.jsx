@@ -16,14 +16,14 @@ const CAMERA_FOV_DEG = 60;
  * - isActive: 오버레이 on/off
  * - onClose: 닫기 핸들러
  * - markerData: { coords: [lng, lat] }
- * - onGhostsLeftChange?: (leftCount: number) => void        // ✅ 남은 유령 수 알림
- * - onAllGhostsCleared?: () => void                         // ✅ 전부 퇴치 시 알림(1회)
+ * - onDefeatedDelta?: (inc: number) => void  // 🔥 잡을 때마다 +1 알림(합산용)
+ * - onAllGhostsCleared?: () => void          // 전부 퇴치 시 1회 알림(옵션)
  */
 export default function SimpleAROverlay({
   isActive,
   onClose,
   markerData,
-  onGhostsLeftChange,
+  onDefeatedDelta,
   onAllGhostsCleared,
 }) {
   const videoRef = useRef(null);
@@ -35,8 +35,8 @@ export default function SimpleAROverlay({
   const {
     ghosts,
     setGhosts,
-    score,              // 내부 점수는 유지(훅에서 관리), 화면엔 표시 안 함
-    totalCaught,
+    // score,           // <- 사용 안 함
+    // totalCaught,     // <- Map3D 합산 방식으로 변경하므로 콜백 전송 불필요
     resetGame,
     catchGhost,
     movementPatterns,
@@ -56,7 +56,7 @@ export default function SimpleAROverlay({
     if (ok) return;
 
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const AudioCtx = window.AudioContext || (window).webkitAudioContext;
       if (!AudioCtx) return;
       if (!audioCtxRef.current) audioCtxRef.current = new AudioCtx();
       const ctx = audioCtxRef.current;
@@ -290,20 +290,13 @@ export default function SimpleAROverlay({
     return () => { timers.forEach(clearInterval); };
   }, [isActive, ghosts.length, movementPatterns, setGhosts]);
 
-  // ✅ 남은 유령 수를 부모(Map3D)로 올려보내기
-  useEffect(() => {
-    if (typeof onGhostsLeftChange === "function") {
-      onGhostsLeftChange(isActive ? ghosts.length : 0);
-    }
-  }, [ghosts.length, isActive, onGhostsLeftChange]);
-
-  // ✅ 전부 퇴치되었을 때 1회 알림
+  // ✅ 전부 퇴치되었을 때 1회 알림(옵션)
   const clearedRef = useRef(false);
   useEffect(() => {
     if (!isActive) { clearedRef.current = false; return; }
     if (ghosts.length === 0 && !clearedRef.current) {
       clearedRef.current = true;
-      if (typeof onAllGhostsCleared === "function") onAllGhostsCleared();
+      onAllGhostsCleared?.();
     }
     if (ghosts.length > 0) clearedRef.current = false;
   }, [ghosts.length, isActive, onAllGhostsCleared]);
@@ -313,9 +306,10 @@ export default function SimpleAROverlay({
   const processedGhosts = ghosts.map((g) => getProcessedGhost(g));
   const fxNum = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
-  // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트(표시는 이펙트만; HUD에는 포인트 미표시)
+  // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트(시각 피드백)
   const handleGhostClick = (idx, pg) => {
-    catchGhost(idx); // 훅에서 +100 처리(내부)
+    catchGhost(idx);       // 내부 상태 업데이트
+    onDefeatedDelta?.(1);  // 🔥 Map3D는 이 값만 누적 합산
     haptic(50);
 
     if (pg?.pos) {
@@ -324,7 +318,7 @@ export default function SimpleAROverlay({
       setFxList((list) => [...list, { id, x: pg.pos.x, y: pg.pos.y }]);
       setTimeout(() => setFxList((list) => list.filter((f) => f.id !== id)), 550);
 
-      // +100p 떠오르기
+      // +100p 떠오르기(시각적 피드백)
       const pid = Math.random().toString(36).slice(2);
       setPointsFx((list) => [...list, { id: pid, x: pg.pos.x, y: pg.pos.y }]);
       setTimeout(() => setPointsFx((list) => list.filter((p) => p.id !== pid)), 900);
@@ -452,7 +446,7 @@ export default function SimpleAROverlay({
                 </>
               )}
 
-              {g.type === "always-visible" && (
+              {g.type === "always-visible"&& (
                 <>
                   <div>화면: {fxNum(pg.pos?.x, 0)}%, {fxNum(pg.pos?.y, 0)}%</div>
                   <div>크기: {Math.round(pg.size || 0)}</div>

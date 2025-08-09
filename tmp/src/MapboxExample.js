@@ -148,7 +148,7 @@ const Map3D = () => {
   // ⏱️/📏 Walk stats UI state (1초마다 갱신)
   const [elapsedSec, setElapsedSec] = useState(0);
   const [distanceM, setDistanceM] = useState(0);
-
+  const [defeated, setDefeated] = useState(0);
   const totalMarkerCount = EXTRA_MARKERS.length;
   const disabledCount = React.useMemo(() => {
     const set = new Set(disabledMarkerTitles);
@@ -946,6 +946,7 @@ const Map3D = () => {
           >
             <div>⏱ {formatDuration(elapsedSec)}</div>
             <div>🚶 {distanceM} m</div>
+            <div>🗡️ 퇴치 {defeated}</div>
           </div>
 
           <div
@@ -978,8 +979,9 @@ const Map3D = () => {
         <SimpleAROverlay
           isActive={isARActive}
           markerData={selectedMarkerData}
-          userLocation={userLocation} // ← 추가
           onClose={handleCloseAR}
+          onDefeatedDelta={(inc) => setDefeated((prev) => prev + inc)} // ✅ 잡을 때마다 합산
+          onAllGhostsCleared={() => console.log("모두 퇴치!")}
         />
       </Suspense>
     </div>
