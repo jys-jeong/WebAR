@@ -7,7 +7,6 @@ import useCompass from "./useCompass";
 import Ghost from "./Ghost";
 import ScorePanel from "./ScorePanel";
 
-// 🔸 markerData 추가
 export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const videoRef = useRef(null);
 
@@ -41,29 +40,24 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const calculateBearing = (lat1, lon1, lat2, lon2) => {
     const toRad = (deg) => (deg * Math.PI) / 180;
     const toDeg = (rad) => (rad * 180) / Math.PI;
-
     const dLon = toRad(lon2 - lon1);
     const lat1Rad = toRad(lat1);
     const lat2Rad = toRad(lat2);
-
     const y = Math.sin(dLon) * Math.cos(lat2Rad);
     const x =
       Math.cos(lat1Rad) * Math.sin(lat2Rad) -
       Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
-
     let bearing = toDeg(Math.atan2(y, x));
     return (bearing + 360) % 360;
   };
 
   const angleDelta = (a, b) => {
-    // 최소 각도차 (0~180)
     let d = Math.abs(a - b);
     return d > 180 ? 360 - d : d;
   };
 
-  const isInCameraView = (ghostBearing, cameraBearing, fov = 60) => {
-    return angleDelta(ghostBearing, cameraBearing) <= fov / 2;
-  };
+  const isInCameraView = (ghostBearing, cameraBearing, fov = 60) =>
+    angleDelta(ghostBearing, cameraBearing) <= fov / 2;
 
   const getProcessedGhost = (ghost) => {
     if (!supported) return ghost;
@@ -112,7 +106,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         return {
           ...ghost,
           pos: { x: -100, y: -100 },
-          currentDistance: distance,
+          currentDistance: distance,        // ✅ 실시간 거리
           ghostBearing,
           cameraBearing,
           deltaToCamera: angleDelta(ghostBearing, cameraBearing),
@@ -133,7 +127,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         pos: { x: Math.max(10, Math.min(90, screenX)), y: screenY },
         size: (ghost.size || 120) * sizeScale,
         opacity: Math.max(0.7, 1 - distance / maxDistance),
-        currentDistance: distance,
+        currentDistance: distance,          // ✅ 실시간 거리
         ghostBearing,
         cameraBearing,
         deltaToCamera: angleDelta(ghostBearing, cameraBearing),
@@ -141,7 +135,6 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       };
     }
 
-    // always-visible
     return ghost;
   };
 
@@ -150,9 +143,10 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     if (!isActive) return;
     if (location) resetGame(location);
     else resetGame();
-  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive]);
 
-  // 마커 기준 반경 1m에 GPS 유령 배치
+  // 마커 기준 반경 1m 내 GPS 유령 배치
   useEffect(() => {
     if (!isActive || !markerData?.coords) return;
 
@@ -254,10 +248,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
 
   if (!isActive) return null;
 
-  // 🔎 렌더·디버그용: 한 번 계산해서 재사용
   const processedGhosts = ghosts.map((g) => getProcessedGhost(g));
-
-  // 안전한 숫자 출력 헬퍼
   const fx = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
   return (
@@ -272,7 +263,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
 
       <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
 
-      {/* ⬅️ 내 정보(작은 패널): heading(방위) + α/β/γ */}
+      {/* ⬅️ 작은 패널: 내 정보 */}
       <div
         style={{
           position: "absolute",
@@ -284,7 +275,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           borderRadius: "8px",
           fontSize: "11px",
           zIndex: 50,
-          minWidth: 170,
+          minWidth: 160,
           maxWidth: 200,
         }}
       >
@@ -300,7 +291,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         <div>γ(Roll): {fx(orientation?.gamma, 0)}°</div>
       </div>
 
-      {/* ➡️ 유령별 상세 정보(스크롤) */}
+      {/* ➡️ 작은 패널: 유령 정보 (스크롤) */}
       <div
         style={{
           position: "absolute",
@@ -310,28 +301,25 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           overflowY: "auto",
           background: "rgba(0,0,0,0.8)",
           color: "white",
-          padding: "12px",
+          padding: "10px 12px",
           borderRadius: "8px",
           fontSize: "11px",
           zIndex: 50,
-          width: "min(340px, calc(100% - 40px))",
+          minWidth: 160,
+          maxWidth: 200,
         }}
       >
-        <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: 8 }}>👻 유령 정보</div>
+        <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: 6 }}>👻 유령</div>
         {processedGhosts.map((pg, i) => {
           const g = ghosts[i];
           const visible = !!pg.pos && pg.pos.x >= 0;
-
           return (
-            <div
-              key={`info-${i}`}
-              style={{ padding: "10px 8px", borderRadius: 8, background: "rgba(255,255,255,0.06)", marginBottom: 8 }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <div key={`info-${i}`} style={{ padding: "8px 8px", borderRadius: 6, background: "rgba(255,255,255,0.06)", marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <div style={{ fontWeight: 800 }}>#{i + 1} • {g.type}</div>
                 <span
                   style={{
-                    padding: "2px 8px",
+                    padding: "1px 6px",
                     borderRadius: 999,
                     background: visible ? "rgba(76,175,80,0.18)" : "rgba(255,152,0,0.18)",
                     color: visible ? "#4CAF50" : "#FF9800",
@@ -342,32 +330,29 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
                 </span>
               </div>
 
-              {/* 유형별 디테일 */}
+              {/* GPS 유령: 실시간 거리 강조 */}
               {g.type === "gps-fixed" && (
                 <>
-                  <div>📍 위치: {fx(g.gpsLat, 6)}, {fx(g.gpsLon, 6)}</div>
-                  <div>📏 거리: {fx(pg.currentDistance, 1)} m</div>
+                  <div>📍 {fx(g.gpsLat, 6)}, {fx(g.gpsLon, 6)}</div>
+                  <div style={{ fontWeight: 800 }}>📏 거리: {fx(pg.currentDistance, 1)} m</div> {/* ✅ 실시간 */}
                   <div>🧭 방위: {fx(pg.ghostBearing, 0)}°</div>
-                  <div>Δ(유령-카메라): {fx(pg.deltaToCamera, 0)}°</div>
-                  <div>🪜 기울기: —</div>
-                  <div>📺 상태: {pg.reason || (visible ? "표시됨" : "숨김")}</div>
+                  <div>Δ: {fx(pg.deltaToCamera, 0)}°</div>
                 </>
               )}
 
+              {/* 회전 유령: 현재/목표 각도 요약 */}
               {g.type === "orientation-fixed" && (
                 <>
-                  <div>🎯 목표 α/β: {fx(g.targetAlpha, 0)}° / {fx(g.targetBeta, 0)}°</div>
-                  <div>📱 현재 α/β: {fx(orientation?.alpha, 0)}° / {fx(orientation?.beta, 0)}°</div>
-                  <div>⚖️ 허용 오차: ±{fx(g.tolerance, 0)}°</div>
+                  <div>목표 α/β: {fx(g.targetAlpha, 0)}° / {fx(g.targetBeta, 0)}°</div>
+                  <div>현재 α/β: {fx(orientation?.alpha, 0)}° / {fx(orientation?.beta, 0)}°</div>
                 </>
               )}
 
+              {/* 항상 보임: 화면 좌표만 간단히 */}
               {g.type === "always-visible" && (
                 <>
-                  <div>🖼 화면: {fx(pg.pos?.x, 0)}%, {fx(pg.pos?.y, 0)}%</div>
-                  <div>📦 크기: {Math.round(pg.size || 0)}</div>
-                  <div>📐 회전: {Math.round(pg.rotation || 0)}°</div>
-                  <div>🪜 기울기: —</div>
+                  <div>화면: {fx(pg.pos?.x, 0)}%, {fx(pg.pos?.y, 0)}%</div>
+                  <div>크기: {Math.round(pg.size || 0)}</div>
                 </>
               )}
             </div>
