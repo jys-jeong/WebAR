@@ -1536,69 +1536,66 @@ const Map3D = () => {
             left: 20,
             bottom: 24,
             zIndex: 1200,
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            background: "rgba(255,255,255,0.95)",
-            borderRadius: 12,
+            minWidth: 220,
             padding: "10px 12px",
-            boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
+            borderRadius: 12,
+            background: "rgba(255,255,255,0.95)",
+            boxShadow: "0 6px 16px rgba(0,0,0,0.12)",
           }}
         >
-          {/* 도넛 게이지 */}
+          {/* 헤더/숫자 */}
           <div
-            aria-label="비활성화 마커 비율 게이지"
+            style={{ display: "flex", alignItems: "center", marginBottom: 8 }}
+          >
+            <span style={{ fontSize: 12, color: "#666" }}>비활성화된 마커</span>
+            <span style={{ marginLeft: "auto", fontSize: 12, color: "#333" }}>
+              {disabledCount} / {totalMarkerCount} ({disabledPct}%)
+            </span>
+          </div>
+
+          {/* 얇은 바 게이지 */}
+          <div
             style={{
-              width: 64,
-              height: 64,
-              borderRadius: "50%",
-              background: `conic-gradient(#ff2d55 ${gaugeAngle}deg, #e6e6e6 0deg)`,
-              display: "grid",
-              placeItems: "center",
-              flexShrink: 0,
+              height: 8, // ← 얇은 바 두께
+              borderRadius: 999,
+              background: "#e9ecef",
+              overflow: "hidden",
             }}
-            title={`비활성화 ${disabledPct}% (${disabledCount}/${totalMarkerCount})`}
+            aria-label={`비활성화 ${disabledPct}%`}
+            title={`비활성화 ${disabledPct}%`}
           >
             <div
               style={{
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                background: "#fff",
-                display: "grid",
-                placeItems: "center",
-                fontSize: 12,
-                fontWeight: 800,
-                color: "#333",
+                width: `${disabledPct}%`,
+                height: "100%",
+                borderRadius: 999,
+                background:
+                  disabledPct < 50
+                    ? "#3A8049"
+                    : disabledPct < 80
+                    ? "#FF9800"
+                    : "#ff2d55",
+                transition: "width 300ms ease",
               }}
-            >
-              {disabledPct}%
-            </div>
+            />
           </div>
 
-          {/* 설명/카운트/초기화 */}
-          <div style={{ minWidth: 120 }}>
-            <div style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>
-              비활성화된 마커
-            </div>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>
-              {disabledCount} / {totalMarkerCount}
-            </div>
-            <button
-              onClick={() => setDisabledMarkerTitles([])}
-              style={{
-                border: "none",
-                background: "#3A8049",
-                color: "#fff",
-                borderRadius: 6,
-                padding: "6px 10px",
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              초기화
-            </button>
-          </div>
+          {/* (선택) 초기화 버튼 */}
+          <button
+            onClick={() => setDisabledMarkerTitles([])}
+            style={{
+              marginTop: 8,
+              border: "none",
+              background: "#3A8049",
+              color: "#fff",
+              borderRadius: 6,
+              padding: "6px 10px",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            초기화
+          </button>
         </div>
       )}
       {/* SimpleAROverlay */}
