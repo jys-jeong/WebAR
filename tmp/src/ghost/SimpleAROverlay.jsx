@@ -120,7 +120,6 @@ export default function SimpleAROverlay({
   const getScreenAngle = () => {
     try {
       if (window.screen?.orientation?.angle != null) return window.screen.orientation.angle;
-      // iOS 구형
       if (typeof window.orientation === "number") return window.orientation;
     } catch {}
     return 0;
@@ -145,31 +144,57 @@ export default function SimpleAROverlay({
     setNeedMotionPerm(!!need);
   }, []);
 
-  // iOS 권한 요청
+  // ⛳ 오버레이가 켜질 때 자동으로 “한 번” 권한 요청 시도
+  useEffect(() => {
+    if (!isActive) return;
+    (async () => {
+      // iOS에서만 의미가 있음 (그리고 보통 사용자 제스처 없으면 거절됨)
+      if (
+        (typeof DeviceMotionEvent !== "undefined" &&
+          typeof DeviceMotionEvent.requestPermission === "function") ||
+        (typeof DeviceOrientationEvent !== "undefined" &&
+          typeof DeviceOrientationEvent.requestPermission === "function")
+      ) {
+        try {
+          let granted = false;
+          if (typeof DeviceMotionEvent?.requestPermission === "function") {
+            const r = await DeviceMotionEvent.requestPermission();
+            granted = granted || (r === "granted");
+          }
+          if (typeof DeviceOrientationEvent?.requestPermission === "function") {
+            const r2 = await DeviceOrientationEvent.requestPermission();
+            granted = granted || (r2 === "granted");
+          }
+          setNeedMotionPerm(!granted); // 실패하면 버튼 계속 노출
+          if (granted) haptic(20);
+        } catch {
+          // 사용자 제스처 필요 등의 이유로 실패 → 버튼 노출 유지
+          setNeedMotionPerm(true);
+        }
+      }
+    })();
+  }, [isActive]);
+
+  // iOS 권한 요청(버튼)
   const requestMotionPermissions = async () => {
     try {
       let granted = false;
-      if (typeof DeviceMotionEvent !== "undefined" &&
-          typeof DeviceMotionEvent.requestPermission === "function") {
+      if (typeof DeviceMotionEvent?.requestPermission === "function") {
         const r = await DeviceMotionEvent.requestPermission();
         granted = granted || (r === "granted");
       }
-      if (typeof DeviceOrientationEvent !== "undefined" &&
-          typeof DeviceOrientationEvent.requestPermission === "function") {
+      if (typeof DeviceOrientationEvent?.requestPermission === "function") {
         const r2 = await DeviceOrientationEvent.requestPermission();
         granted = granted || (r2 === "granted");
       }
       setNeedMotionPerm(!granted);
       if (granted) haptic(30);
     } catch {
-      // 실패해도 UI만 닫지 않음
+      setNeedMotionPerm(true);
     }
   };
 
   const getProcessedGhost = (ghost) => {
-    // ❌ 예전처럼 supported가 false라고 전체를 early-return 하지 않음
-    // orientation-fixed만 supported 필요
-
     // orientation-fixed
     if (ghost.type === "orientation-fixed") {
       if (!supported) return { ...ghost, pos: { x: -100, y: -100 }, reason: "센서 미지원/미허용" };
@@ -184,10 +209,7 @@ export default function SimpleAROverlay({
     }
 
     // gps-fixed: 도착(≤1.2m) + 시야각/조준 각도
-    if (
-      ghost.type === "gps-fixed" &&
-      location
-    ) {
+    if (ghost.type === "gps-fixed" && location) {
       const distance = calculateDistance(
         location.latitude,
         location.longitude,
@@ -202,7 +224,7 @@ export default function SimpleAROverlay({
           currentDistance: distance,
           reason: `도착 필요 (${(distance - ARRIVE_RADIUS_M).toFixed(1)}m 남음)`,
         };
-      }
+        }
 
       // 방위: useCompass.heading → 없으면 alpha로 추정
       const fallbackHeading = computeHeadingFromAlpha();
@@ -609,7 +631,7 @@ export default function SimpleAROverlay({
           left: 50%;
           top: 50%;
           width: 24px;
-          height: 24%;
+          height: 24px; /* ← %에서 px로 수정 */
           transform: translate(-50%, -50%);
           border-radius: 50%;
           background: rgba(255,255,255,0.9);
