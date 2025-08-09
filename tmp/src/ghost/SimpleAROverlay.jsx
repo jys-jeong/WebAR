@@ -17,17 +17,14 @@ const CAMERA_FOV_DEG = 60;
  * - onClose: 닫기 핸들러
  * - markerData: { coords: [lng, lat] }
  * - onGhostsLeftChange?: (leftCount: number) => void   // 남은 유령 수 알림
- * - onDefeatedChange?: (total: number) => void         // 세션 누적 퇴치 수 알림
- * - onDefeatedDelta?: (inc: number) => void            // 🔥 잡을 때마다 +1 알림(합산용)
+ * - onDefeatedChange?: (defeatedCount: number) => void // ✅ 쓰러뜨린 유령 수 알림
  * - onAllGhostsCleared?: () => void                    // 전부 퇴치 시 1회 알림
  */
 export default function SimpleAROverlay({
   isActive,
   onClose,
   markerData,
-  onGhostsLeftChange,
   onDefeatedChange,
-  onDefeatedDelta,   // ✅ 추가: Map3D에서 단순 합산용
   onAllGhostsCleared,
 }) {
   const videoRef = useRef(null);
@@ -39,8 +36,8 @@ export default function SimpleAROverlay({
   const {
     ghosts,
     setGhosts,
-    score,              // 훅 내부 계산용
-    totalCaught,        // ✅ 세션 누적 퇴치 수
+    score,              // 훅 내부에서만 사용(표시는 안 함)
+    totalCaught,        // ✅ 누적 퇴치 수
     resetGame,
     catchGhost,
     movementPatterns,
@@ -60,7 +57,7 @@ export default function SimpleAROverlay({
     if (ok) return;
 
     try {
-      const AudioCtx = window.AudioContext || (window).webkitAudioContext;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       if (!audioCtxRef.current) audioCtxRef.current = new AudioCtx();
       const ctx = audioCtxRef.current;
@@ -294,14 +291,8 @@ export default function SimpleAROverlay({
     return () => { timers.forEach(clearInterval); };
   }, [isActive, ghosts.length, movementPatterns, setGhosts]);
 
-  // ✅ 남은 유령 수 변경 → 부모에 알림
-  useEffect(() => {
-    if (typeof onGhostsLeftChange === "function") {
-      onGhostsLeftChange(isActive ? ghosts.length : 0);
-    }
-  }, [ghosts.length, isActive, onGhostsLeftChange]);
 
-  // ✅ 누적 퇴치 수 변경 → 부모에 알림(세션 total)
+  // ✅ 쓰러뜨린(누적 퇴치) 유령 수 변경 → 부모에 알림
   useEffect(() => {
     if (typeof onDefeatedChange === "function") {
       onDefeatedChange(isActive ? totalCaught : 0);
@@ -314,7 +305,7 @@ export default function SimpleAROverlay({
     if (!isActive) { clearedRef.current = false; return; }
     if (ghosts.length === 0 && !clearedRef.current) {
       clearedRef.current = true;
-      onAllGhostsCleared?.();
+      if (typeof onAllGhostsCleared === "function") onAllGhostsCleared();
     }
     if (ghosts.length > 0) clearedRef.current = false;
   }, [ghosts.length, isActive, onAllGhostsCleared]);
@@ -324,10 +315,9 @@ export default function SimpleAROverlay({
   const processedGhosts = ghosts.map((g) => getProcessedGhost(g));
   const fxNum = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
-  // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트(시각 피드백)
+  // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트(표시는 이펙트만)
   const handleGhostClick = (idx, pg) => {
-    catchGhost(idx);         // 훅 내부에서 totalCaught/score 업데이트
-    onDefeatedDelta?.(1);    // ✅ Map3D는 이 값만 “합산”하면 됨
+    catchGhost(idx); // 훅 내부에서 totalCaught/score 업데이트
     haptic(50);
 
     if (pg?.pos) {
