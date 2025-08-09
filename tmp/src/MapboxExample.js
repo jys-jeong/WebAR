@@ -144,7 +144,7 @@ const Map3D = () => {
   const [isWalkMode, setIsWalkMode] = useState(false);
   const isWalkModeRef = useRef(false);
   const routeReqRef = useRef(0);
-
+  const [points, setPoints] = useState(0);
   // ⏱️/📏 Walk stats UI state (1초마다 갱신)
   const [elapsedSec, setElapsedSec] = useState(0);
   const [distanceM, setDistanceM] = useState(0);
@@ -947,6 +947,7 @@ const Map3D = () => {
             <div>⏱ {formatDuration(elapsedSec)}</div>
             <div>🚶 {distanceM} m</div>
             <div>🗡️ 퇴치 {defeated}</div>
+            <div>⭐ 포인트: {points}</div>
           </div>
 
           <div
@@ -980,7 +981,8 @@ const Map3D = () => {
           isActive={isARActive}
           markerData={selectedMarkerData}
           onClose={handleCloseAR}
-          onDefeatedDelta={(inc) => setDefeated((prev) => prev + inc)} // ✅ 잡을 때마다 합산
+          onDefeatedDelta={(inc) => setDefeated((prev) => prev + inc)} // 기존 유령 퇴치 합산
+          onBonusPoints={(p) => setPoints((prev) => prev + p)} // ⭐ 보물상자 포인트 합산
           onAllGhostsCleared={() => console.log("모두 퇴치!")}
         />
       </Suspense>
