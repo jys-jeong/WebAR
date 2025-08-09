@@ -6,43 +6,26 @@ import useGeoLocation from "./useGeoLocation";
 import useCompass from "./useCompass";
 import Ghost from "./Ghost";
 
-// ====== 작은 HUD: 남은 유령 / 포인트 / 퇴치수 ======
-function PointsHUD({ left, points, total }) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: 20,
-        left: "50%",
-        transform: "translateX(-50%)",
-        background: "rgba(0,0,0,0.6)",
-        color: "#fff",
-        padding: "8px 14px",
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 700,
-        letterSpacing: 0.2,
-        display: "flex",
-        gap: 12,
-        zIndex: 10,
-        pointerEvents: "none", // 클릭 방해 X
-        backdropFilter: "blur(4px)",
-        border: "1px solid rgba(255,255,255,0.15)",
-      }}
-    >
-      <span>👻 남은 유령: {left}</span>
-      <span>⭐ 포인트: {points}</span>
-      <span>🗡️ 퇴치: {total}</span>
-    </div>
-  );
-}
-
 // 도착/조준 기준
 const ARRIVE_RADIUS_M = 1.2;
 const AIM_TOLERANCE_DEG = 6;
 const CAMERA_FOV_DEG = 60;
 
-export default function SimpleAROverlay({ isActive, onClose, markerData }) {
+/**
+ * props:
+ * - isActive: 오버레이 on/off
+ * - onClose: 닫기 핸들러
+ * - markerData: { coords: [lng, lat] }
+ * - onGhostsLeftChange?: (leftCount: number) => void        // ✅ 남은 유령 수 알림
+ * - onAllGhostsCleared?: () => void                         // ✅ 전부 퇴치 시 알림(1회)
+ */
+export default function SimpleAROverlay({
+  isActive,
+  onClose,
+  markerData,
+  onGhostsLeftChange,
+  onAllGhostsCleared,
+}) {
   const videoRef = useRef(null);
 
   const { orientation, supported } = useDeviceOrientation();
@@ -52,7 +35,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const {
     ghosts,
     setGhosts,
-    score: points,           // ← score를 points로 별칭
+    score,              // 내부 점수는 유지(훅에서 관리), 화면엔 표시 안 함
     totalCaught,
     resetGame,
     catchGhost,
@@ -307,14 +290,32 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     return () => { timers.forEach(clearInterval); };
   }, [isActive, ghosts.length, movementPatterns, setGhosts]);
 
+  // ✅ 남은 유령 수를 부모(Map3D)로 올려보내기
+  useEffect(() => {
+    if (typeof onGhostsLeftChange === "function") {
+      onGhostsLeftChange(isActive ? ghosts.length : 0);
+    }
+  }, [ghosts.length, isActive, onGhostsLeftChange]);
+
+  // ✅ 전부 퇴치되었을 때 1회 알림
+  const clearedRef = useRef(false);
+  useEffect(() => {
+    if (!isActive) { clearedRef.current = false; return; }
+    if (ghosts.length === 0 && !clearedRef.current) {
+      clearedRef.current = true;
+      if (typeof onAllGhostsCleared === "function") onAllGhostsCleared();
+    }
+    if (ghosts.length > 0) clearedRef.current = false;
+  }, [ghosts.length, isActive, onAllGhostsCleared]);
+
   if (!isActive) return null;
 
   const processedGhosts = ghosts.map((g) => getProcessedGhost(g));
   const fxNum = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
-  // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트
+  // 유령 클릭: 퇴치 + 햅틱/이펙트 + +100p 텍스트(표시는 이펙트만; HUD에는 포인트 미표시)
   const handleGhostClick = (idx, pg) => {
-    catchGhost(idx); // useGhostGame에서 포인트 +100 처리
+    catchGhost(idx); // 훅에서 +100 처리(내부)
     haptic(50);
 
     if (pg?.pos) {
@@ -333,9 +334,6 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   return (
     <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "#000", zIndex: 9999 }}>
       <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-
-      {/* 포인트 HUD (Score → 포인트) */}
-      <PointsHUD left={ghosts.length} points={points} total={totalCaught} />
 
       {/* 유령 레이어(패널보다 위) */}
       <div style={{ position: "absolute", inset: 0, zIndex: 60, pointerEvents: "auto" }}>
@@ -363,7 +361,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         </div>
       ))}
 
-      {/* +100p 점수 이펙트 */}
+      {/* +100p 점수 이펙트(시각적 피드백만) */}
       {pointsFx.map((p) => (
         <div
           key={p.id}
