@@ -1,15 +1,16 @@
 // components/SimpleAROverlay.jsx
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react"; // ⭐ useState 추가
 import useGhostGame from "./useGhostGame";
 import useDeviceOrientation from "./useDeviceOrientation";
 import useGeoLocation from "./useGeoLocation";
 import useCompass from "./useCompass";
 import Ghost from "./Ghost";
 import ScorePanel from "./ScorePanel";
+
 // 도착/조준 기준
-const ARRIVE_RADIUS_M = 1.2; // 위치 도착 판정 반경(≈1.2m)
-const AIM_TOLERANCE_DEG = 6; // 조준 허용각(±6° 내)
-const CAMERA_FOV_DEG = 60; // 사용 중인 가로 시야각(정보 패널 텍스트도 60°로 표시 중)
+const ARRIVE_RADIUS_M = 1.2;
+const AIM_TOLERANCE_DEG = 6;
+const CAMERA_FOV_DEG = 60;
 
 export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const videoRef = useRef(null);
@@ -27,6 +28,9 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     catchGhost,
     movementPatterns,
   } = useGhostGame();
+
+  // ⭐ 클릭 이펙트 상태
+  const [fxList, setFxList] = useState([]);
 
   // Haversine
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
@@ -60,9 +64,6 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
     return d > 180 ? 360 - d : d;
   };
 
-  const isInCameraView = (ghostBearing, cameraBearing, fov = 60) =>
-    angleDelta(ghostBearing, cameraBearing) <= fov / 2;
-
   const getProcessedGhost = (ghost) => {
     if (!supported) return ghost;
 
@@ -73,8 +74,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         360 - Math.abs(orientation.alpha - ghost.targetAlpha)
       );
       const betaDiff = Math.abs(orientation.beta - ghost.targetBeta);
-      const inView =
-        alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
+      const inView = alphaDiff <= ghost.tolerance && betaDiff <= ghost.tolerance;
       if (!inView) return { ...ghost, pos: { x: -100, y: -100 } };
       return ghost;
     }
@@ -93,19 +93,15 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         ghost.gpsLon
       );
 
-      // ① 반드시 도착(≤ ARRIVE_RADIUS_M)해야 함
       if (distance > ARRIVE_RADIUS_M) {
         return {
           ...ghost,
           pos: { x: -100, y: -100 },
           currentDistance: distance,
-          reason: `도착 필요 (${(distance - ARRIVE_RADIUS_M).toFixed(
-            1
-          )}m 남음)`,
+          reason: `도착 필요 (${(distance - ARRIVE_RADIUS_M).toFixed(1)}m 남음)`,
         };
       }
 
-      // ② 도착했으면 '조준 허용각' 안으로 겨눠야 함
       const ghostBearing = calculateBearing(
         location.latitude,
         location.longitude,
@@ -115,7 +111,6 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       const cameraBearing = compass.heading;
       const delta = angleDelta(ghostBearing, cameraBearing);
 
-      // 대략적인 FOV 체크는 선택이지만, FOV 밖이면 숨김 처리
       if (delta > CAMERA_FOV_DEG / 2) {
         return {
           ...ghost,
@@ -128,7 +123,6 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         };
       }
 
-      // 조준 각도(±AIM_TOLERANCE_DEG) 안이어야 뜸
       if (delta > AIM_TOLERANCE_DEG) {
         return {
           ...ghost,
@@ -141,11 +135,9 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         };
       }
 
-      // ③ 조건 충족 → 화면 중앙에 표시
+      // 도착+조준 → 중앙 표시
       const screenX = 50;
       const screenY = 50;
-
-      // 너무 가까우면 사이즈 튀는 것 방지: 0.9 ~ 1.3 배로 클램프
       const sizeScaleRaw = 50 / Math.max(distance, 0.5);
       const sizeScale = Math.max(0.9, Math.min(1.3, sizeScaleRaw));
 
@@ -162,6 +154,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
       };
     }
 
+    // always-visible 등
     return ghost;
   };
 
@@ -237,8 +230,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         if (videoRef.current) videoRef.current.srcObject = s;
       })
       .catch(() => alert("카메라 권한이 필요합니다"));
-    return () =>
-      videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
+    return () => videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
   }, [isActive]);
 
   // move patterns (always-visible only)
@@ -247,19 +239,14 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
 
     const timers = ghosts
       .map((gh, index) => {
-        if (gh.type === "orientation-fixed" || gh.type === "gps-fixed")
-          return null;
+        if (gh.type === "orientation-fixed" || gh.type === "gps-fixed") return null;
 
         return setInterval(() => {
           setGhosts((prev) => {
             const next = [...prev];
-            if (!next[index] || next[index].type !== "always-visible")
-              return prev;
+            if (!next[index] || next[index].type !== "always-visible") return prev;
 
-            const pattern =
-              movementPatterns[
-                Math.floor(Math.random() * movementPatterns.length)
-              ];
+            const pattern = movementPatterns[Math.floor(Math.random() * movementPatterns.length)];
             let { x, y } = next[index].pos;
 
             switch (pattern) {
@@ -280,13 +267,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
               pos: { x, y },
               size:
                 Math.random() < 0.2
-                  ? Math.max(
-                      80,
-                      Math.min(
-                        250,
-                        next[index].size + (Math.random() - 0.5) * 30
-                      )
-                    )
+                  ? Math.max(80, Math.min(250, next[index].size + (Math.random() - 0.5) * 30))
                   : next[index].size,
               rotation:
                 Math.random() < 0.15
@@ -310,42 +291,53 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
   const processedGhosts = ghosts.map((g) => getProcessedGhost(g));
   const fx = (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
+  // ⭐ 유령 클릭 핸들러: 퇴치 + 이펙트
+  const handleGhostClick = (idx, pg) => {
+    catchGhost(idx);
+    if (navigator.vibrate) try { navigator.vibrate(30); } catch {}
+    if (pg?.pos) {
+      const id = Math.random().toString(36).slice(2);
+      setFxList((list) => [...list, { id, x: pg.pos.x, y: pg.pos.y }]);
+      setTimeout(() => {
+        setFxList((list) => list.filter((f) => f.id !== id));
+      }, 550); // 애니메이션 길이와 맞춤
+    }
+  };
+
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100%",
-        height: "100%",
-        background: "#000",
-        zIndex: 9999,
-      }}
-    >
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-      />
+    <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "#000", zIndex: 9999 }}>
+      <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
 
       {/* 👻 실제 렌더 */}
       {processedGhosts.map((pg, i) => {
-        if (!pg.pos || pg.pos.x < 0) return null;
-        return (
-          <Ghost
-            key={`ghost-${i}`}
-            gh={pg}
-            idx={i}
-            onClick={() => catchGhost(i)}
-          />
-        );
+        if (!pg?.pos || pg.pos.x < 0) return null;
+        return <Ghost key={`ghost-${i}`} gh={pg} idx={i} onClick={() => handleGhostClick(i, pg)} />;
       })}
 
-      <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
+      {/* ⭐ 퇴치 이펙트 */}
+      {fxList.map((f) => (
+        <div
+          key={f.id}
+          style={{
+            position: "absolute",
+            left: `${f.x}%`,
+            top: `${f.y}%`,
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "none",
+            zIndex: 70,
+          }}
+        >
+          <div className="fx-ring" />
+          <div className="fx-flash" />
+        </div>
+      ))}
 
-      {/* ⬅️ 작은 패널: 내 정보 */}
+      {/* ⭐ 점수 패널은 클릭 방해하지 않도록 */}
+      <div style={{ pointerEvents: "none", zIndex: 40 }}>
+        <ScorePanel left={ghosts.length} score={score} total={totalCaught} />
+      </div>
+
+      {/* ⬅️ 내 정보 패널 (작고 클릭 패스-스루) */}
       <div
         style={{
           position: "absolute",
@@ -359,23 +351,18 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           zIndex: 50,
           minWidth: 160,
           maxWidth: 200,
+          pointerEvents: "none", // ⭐ 패널 뒤 유령 클릭 가능
         }}
       >
-        <div style={{ color: "#4CAF50", fontWeight: 800, marginBottom: 6 }}>
-          🧍 내 정보
-        </div>
-        {location && (
-          <div style={{ marginBottom: 4 }}>
-            📍 {fx(location.latitude, 6)}, {fx(location.longitude, 6)}
-          </div>
-        )}
+        <div style={{ color: "#4CAF50", fontWeight: 800, marginBottom: 6 }}>🧍 내 정보</div>
+        {location && <div style={{ marginBottom: 4 }}>📍 {fx(location.latitude, 6)}, {fx(location.longitude, 6)}</div>}
         <div>🧭 Heading: {fx(compass?.heading, 0)}°</div>
         <div>α(Yaw): {fx(orientation?.alpha, 0)}°</div>
         <div>β(Pitch): {fx(orientation?.beta, 0)}°</div>
         <div>γ(Roll): {fx(orientation?.gamma, 0)}°</div>
       </div>
 
-      {/* ➡️ 작은 패널: 유령 정보 (스크롤) */}
+      {/* ➡️ 유령 정보 패널 (작고 클릭 패스-스루) */}
       <div
         style={{
           position: "absolute",
@@ -391,14 +378,13 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           zIndex: 50,
           minWidth: 160,
           maxWidth: 200,
+          pointerEvents: "none", // ⭐ 패널 뒤 유령 클릭 가능
         }}
       >
-        <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: 6 }}>
-          👻 유령
-        </div>
+        <div style={{ color: "#FFD700", fontWeight: "bold", marginBottom: 6 }}>👻 유령</div>
         {processedGhosts.map((pg, i) => {
           const g = ghosts[i];
-          const visible = !!pg.pos && pg.pos.x >= 0;
+          const visible = !!pg?.pos && pg.pos.x >= 0;
           return (
             <div
               key={`info-${i}`}
@@ -409,23 +395,13 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
                 marginBottom: 6,
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginBottom: 4,
-                }}
-              >
-                <div style={{ fontWeight: 800 }}>
-                  #{i + 1} • {g.type}
-                </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <div style={{ fontWeight: 800 }}>#{i + 1} • {g.type}</div>
                 <span
                   style={{
                     padding: "1px 6px",
                     borderRadius: 999,
-                    background: visible
-                      ? "rgba(76,175,80,0.18)"
-                      : "rgba(255,152,0,0.18)",
+                    background: visible ? "rgba(76,175,80,0.18)" : "rgba(255,152,0,0.18)",
                     color: visible ? "#4CAF50" : "#FF9800",
                     fontWeight: 800,
                   }}
@@ -434,40 +410,25 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
                 </span>
               </div>
 
-              {/* GPS 유령: 실시간 거리 강조 */}
               {g.type === "gps-fixed" && (
                 <>
-                  <div>
-                    📍 {fx(g.gpsLat, 6)}, {fx(g.gpsLon, 6)}
-                  </div>
-                  <div style={{ fontWeight: 800 }}>
-                    📏 거리: {fx(pg.currentDistance, 1)} m
-                  </div>{" "}
-                  {/* ✅ 실시간 */}
+                  <div>📍 {fx(g.gpsLat, 6)}, {fx(g.gpsLon, 6)}</div>
+                  <div style={{ fontWeight: 800 }}>📏 거리: {fx(pg.currentDistance, 1)} m</div>
                   <div>🧭 방위: {fx(pg.ghostBearing, 0)}°</div>
                   <div>Δ: {fx(pg.deltaToCamera, 0)}°</div>
                 </>
               )}
 
-              {/* 회전 유령: 현재/목표 각도 요약 */}
               {g.type === "orientation-fixed" && (
                 <>
-                  <div>
-                    목표 α/β: {fx(g.targetAlpha, 0)}° / {fx(g.targetBeta, 0)}°
-                  </div>
-                  <div>
-                    현재 α/β: {fx(orientation?.alpha, 0)}° /{" "}
-                    {fx(orientation?.beta, 0)}°
-                  </div>
+                  <div>목표 α/β: {fx(g.targetAlpha, 0)}° / {fx(g.targetBeta, 0)}°</div>
+                  <div>현재 α/β: {fx(orientation?.alpha, 0)}° / {fx(orientation?.beta, 0)}°</div>
                 </>
               )}
 
-              {/* 항상 보임: 화면 좌표만 간단히 */}
               {g.type === "always-visible" && (
                 <>
-                  <div>
-                    화면: {fx(pg.pos?.x, 0)}%, {fx(pg.pos?.y, 0)}%
-                  </div>
+                  <div>화면: {fx(pg.pos?.x, 0)}%, {fx(pg.pos?.y, 0)}%</div>
                   <div>크기: {Math.round(pg.size || 0)}</div>
                 </>
               )}
@@ -477,7 +438,7 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
         {processedGhosts.length === 0 && <div>유령이 없습니다.</div>}
       </div>
 
-      {/* 닫기 */}
+      {/* 닫기 (버튼은 눌려야 하므로 auto) */}
       <button
         onClick={onClose}
         style={{
@@ -492,11 +453,44 @@ export default function SimpleAROverlay({ isActive, onClose, markerData }) {
           background: "#FF4444",
           border: "none",
           cursor: "pointer",
-          zIndex: 60,
+          zIndex: 80,
+          pointerEvents: "auto", // ⭐
         }}
       >
         ×
       </button>
+
+      {/* ⭐ 이펙트용 스타일 */}
+      <style jsx>{`
+        @keyframes fx-pop {
+          0%   { transform: scale(0.3); opacity: 0.9; }
+          60%  { transform: scale(1.1); opacity: 0.7; }
+          100% { transform: scale(1.6); opacity: 0; }
+        }
+        @keyframes fx-flash {
+          0% { opacity: 0.9; transform: scale(1); }
+          100% { opacity: 0; transform: scale(1.2); }
+        }
+        .fx-ring {
+          width: 80px;
+          height: 80px;
+          border-radius: 50%;
+          border: 3px solid #ffd700;
+          animation: fx-pop 550ms ease-out forwards;
+          box-shadow: 0 0 12px rgba(255,215,0,0.8);
+        }
+        .fx-flash {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          width: 24px;
+          height: 24px;
+          transform: translate(-50%, -50%);
+          border-radius: 50%;
+          background: rgba(255,255,255,0.9);
+          animation: fx-flash 220ms ease-out forwards;
+        }
+      `}</style>
     </div>
   );
 }
