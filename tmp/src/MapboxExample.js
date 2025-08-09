@@ -146,7 +146,7 @@ const Map3D = () => {
 
   const [isWalkMode, setIsWalkMode] = useState(false);
   const isWalkModeRef = useRef(false);
-
+  const routeReqRef = useRef(0);
   useEffect(() => {
     isWalkModeRef.current = isWalkMode;
     updateDOMMarkers(); // 모드 바뀌면 마커 스타일/인터랙션 갱신
@@ -572,7 +572,6 @@ const Map3D = () => {
 
   // 고정 위치 기반 길찾기 함수
   const getRouteWithFixedLocation = async (fixedStartLocation, end) => {
-    // (2) 스타일 로딩 가드: 스타일이 아직이면 idle 후 재시도
     if (!map.current || !map.current.isStyleLoaded()) {
       mobileLog("스타일 미로딩: idle 이후 재시도", "warning");
       map.current.once("idle", () =>
@@ -581,52 +580,45 @@ const Map3D = () => {
       return;
     }
 
+    // 🔢 이 호출만의 고유 id
+    const myId = ++routeReqRef.current;
     setIsRouting(true);
-    mobileLog(
-      `🗺️ 고정 위치 기반 길찾기 시작: [${fixedStartLocation[0].toFixed(
-        6
-      )}, ${fixedStartLocation[1].toFixed(6)}] → [${end[0].toFixed(
-        6
-      )}, ${end[1].toFixed(6)}]`,
-      "info"
-    );
+    mobileLog(`route req #${myId} 시작`, "info");
 
     try {
-      // (3) Directions 요청 + 로깅
       const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${fixedStartLocation[0]},${fixedStartLocation[1]};${end[0]},${end[1]}?steps=true&geometries=geojson&overview=full&access_token=${CONFIG.mapboxToken}`;
       const res = await fetch(url);
-      let data;
-      try {
-        data = await res.json();
-      } catch (e) {
-        mobileLog(`directions JSON 파싱 실패: ${e.message}`, "error");
-        throw e;
-      }
-
-      mobileLog(`directions: http=${res.status} code=${data?.code}`, "info");
+      const data = await res.json();
+      mobileLog(
+        `route req #${myId}: http=${res.status} code=${data?.code}`,
+        "info"
+      );
 
       if (res.status !== 200 || data?.code !== "Ok" || !data?.routes?.length) {
-        mobileLog(`경로 에러/없음: ${JSON.stringify(data)}`, "error");
+        mobileLog(`route req #${myId}: 경로 없음/에러`, "error");
         alert("경로를 찾지 못했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+
+      // 🛑 최신 요청이 아니면 그리지 말고 종료
+      if (myId !== routeReqRef.current) {
+        mobileLog(`route req #${myId}: stale 응답, 그리기 스킵`, "warning");
         return;
       }
 
       const routeData = data.routes[0];
       const routeCoords = routeData.geometry.coordinates;
-
       const enhancedRoute = [fixedStartLocation, ...routeCoords, end];
-      const filteredRoute = enhancedRoute.filter((coord, index) => {
-        if (index === 0) return true;
-        const prev = enhancedRoute[index - 1];
-        const dx = coord[0] - prev[0];
-        const dy = coord[1] - prev[1];
+      const filteredRoute = enhancedRoute.filter((coord, i) => {
+        if (i === 0) return true;
+        const p = enhancedRoute[i - 1];
+        const dx = coord[0] - p[0];
+        const dy = coord[1] - p[1];
         return Math.sqrt(dx * dx + dy * dy) > 0.00001;
       });
 
-      // 기존 코드에서는 safeRemoveSourceAndLayers("route")였는데,
-      // 너가 ID를 walk-route로 쓰고 있으니 여기서도 walk-route로!
+      // ✅ 최신 응답만 기존 레이어 제거 + 새로 그리기
       safeRemoveSourceAndLayers("walk-route");
-
       if (map.current.getLayer("walk-route"))
         map.current.removeLayer("walk-route");
       if (map.current.getSource("walk-route"))
@@ -640,7 +632,6 @@ const Map3D = () => {
           geometry: { type: "LineString", coordinates: filteredRoute },
         },
       });
-
       map.current.addLayer({
         id: "walk-route",
         type: "line",
@@ -661,30 +652,12 @@ const Map3D = () => {
 
       const distance = (routeData.distance / 1000).toFixed(1);
       const duration = Math.round(routeData.duration / 60);
-
-      const destination = EXTRA_MARKERS.find(
-        (m) =>
-          Math.abs(m.lng - end[0]) < 0.000001 &&
-          Math.abs(m.lat - end[1]) < 0.000001
-      );
-      const locationChanged =
-        userLocation &&
-        (Math.abs(userLocation[0] - fixedStartLocation[0]) > 0.00001 ||
-          Math.abs(userLocation[1] - fixedStartLocation[1]) > 0.00001);
-
-      alert(
-        `🚶‍♂️ ${destination?.title || "목적지"}로 가는 경로` +
-          `\n📏 거리: ${distance}km` +
-          `\n⏰ 예상 시간: ${duration}분` +
-          `\n📍 경로 포인트: ${filteredRoute.length}개` +
-          (locationChanged
-            ? "\n\n⚠️ 마커 클릭 시점의 위치 기준으로 계산됨."
-            : "")
-      );
-    } catch (error) {
-      mobileLog(`❌ 길찾기 오류: ${error.message}`, "error");
+      alert(`📏 ${distance}km · ⏰ ${duration}분`);
+    } catch (e) {
+      mobileLog(`❌ route req #${myId} 오류: ${e.message}`, "error");
       alert("길찾기 중 오류가 발생했습니다.");
     } finally {
+      // 최신/스테일 상관없이 로딩 플래그만 정리
       setIsRouting(false);
     }
   };
