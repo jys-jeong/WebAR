@@ -699,7 +699,6 @@ const Map3D = () => {
   const handlePinMarkerClick = (coords, feature) => {
     console.log("마커 클림됨");
     mobileLog("경로 초기화");
-    if (!isWalkMode) return;
     mobileLog("경로 생성");
     clearRoute();
     mobileLog(
