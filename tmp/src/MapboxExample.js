@@ -978,6 +978,7 @@ const Map3D = () => {
         <SimpleAROverlay
           isActive={isARActive}
           markerData={selectedMarkerData}
+          userLocation={userLocation} // ← 추가
           onClose={handleCloseAR}
         />
       </Suspense>
