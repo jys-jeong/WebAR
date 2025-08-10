@@ -976,7 +976,7 @@ const Map3D = ({ onExit }) => {
           >
             <div>⏱ {formatDuration(elapsedSec)}</div>
             <div>🚶 {distanceM} m</div>
-            <div>🗡️ 잡은 유령 {defeated}</div>
+            <div>👻 잡은 유령 {defeated}</div>
             <div>⭐ 포인트: {points}</div>
           </div>
 

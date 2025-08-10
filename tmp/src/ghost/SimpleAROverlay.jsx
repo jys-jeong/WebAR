@@ -604,11 +604,8 @@ export default function SimpleAROverlay({
         <div style={{ color: "#4CAF50", fontWeight: 800, marginBottom: 6 }}>🧍 내 정보</div>
         {!isSecure && <div style={{ color: "#ffb300", marginBottom: 4 }}>⚠ HTTPS 아님</div>}
         {location && <div style={{ marginBottom: 4 }}>📍 {fxNum(location.latitude, 6)}, {fxNum(location.longitude, 6)}</div>}
-        <div>🧭 Heading(hook): {fxNum(compass?.heading, 0)}°</div>
-        <div>🧭 Heading(alpha→보정): {fxNum(computeHeadingFromAlpha(), 0)}°</div>
-        <div>α(Yaw): {fxNum(orientation?.alpha, 0)}°</div>
-        <div>β(Pitch): {fxNum(orientation?.beta, 0)}°</div>
-        <div>γ(Roll): {fxNum(orientation?.gamma, 0)}°</div>
+        <div>회전: {fxNum(orientation?.alpha, 0)}°</div>
+        <div>기기 기울기: {fxNum(orientation?.beta, 0)}°</div>
       </div>
 
       {/* ➡️ 유령 정보 패널 */}
@@ -620,27 +617,26 @@ export default function SimpleAROverlay({
           return (
             <div key={`info-${i}`} style={{ padding: "8px 8px", borderRadius: 6, background: "rgba(255,255,255,0.06)", marginBottom: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <div style={{ fontWeight: 800 }}>#{i + 1} • {g.type}</div>
+                <div style={{ fontWeight: 800 }}>유령{i + 1}</div>
                 <span style={{ padding: "1px 6px", borderRadius: 999, background: visible ? "rgba(76,175,80,0.18)" : "rgba(255,152,0,0.18)", color: visible ? "#4CAF50" : "#FF9800", fontWeight: 800 }}>
-                  {visible ? "보임" : "숨김"}
+                  {visible ? "보임" : "안보임"}
                 </span>
               </div>
 
               {g.type === "gps-fixed" && (
                 <>
-                  <div>📍 {fxNum(g.gpsLat, 6)}, {fxNum(g.gpsLon, 6)}</div>
                   <div style={{ fontWeight: 800 }}>📏 거리: {fxNum(pg.currentDistance, 1)} m</div>
-                  <div>🧭 방위(목표): {fxNum(pg.ghostBearing, 0)}°</div>
-                  <div>🧭 방위(카메라): {fxNum(pg.cameraBearing, 0)}°</div>
-                  <div>Δ: {fxNum(pg.deltaToCamera, 0)}°</div>
+                  <div>🧭 방향(유령): {fxNum(pg.ghostBearing, 0)}°</div>
+                  <div>🧭 방향(나): {fxNum(pg.cameraBearing, 0)}°</div>
+
                   {pg.reason && <div style={{ opacity: 0.8 }}>• {pg.reason}</div>}
                 </>
               )}
 
               {g.type === "orientation-fixed" && (
                 <>
-                  <div>목표 α/β: {fxNum(g.targetAlpha, 0)}° / {fxNum(g.targetBeta, 0)}°</div>
-                  <div>현재 α/β: {fxNum(orientation?.alpha, 0)}° / {fxNum(orientation?.beta, 0)}°</div>
+                  <div>유령 α/β: {fxNum(g.targetAlpha, 0)}° / {fxNum(g.targetBeta, 0)}°</div>
+                  <div>나 α/β: {fxNum(orientation?.alpha, 0)}° / {fxNum(orientation?.beta, 0)}°</div>
                 </>
               )}
             </div>
