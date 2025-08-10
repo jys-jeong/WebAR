@@ -10,6 +10,7 @@ import Ghost from "./Ghost";
 const ARRIVE_RADIUS_M = 1.2;
 const AIM_TOLERANCE_DEG = 6;
 const CAMERA_FOV_DEG = 60;
+const COUNTDOWN_SECS = 20;
 
 /**
  * props:
@@ -67,13 +68,23 @@ export default function SimpleAROverlay({
   const resultTimerRef = useRef(null);
   const resultShownRef = useRef(false);
 
+  // 카운트다운
+  const [countdown, setCountdown] = useState(COUNTDOWN_SECS);
+  const countdownRef = useRef(null);
+  const startTimeRef = useRef(0);
+
   const openResult = () => {
     if (resultShownRef.current) return;
     resultShownRef.current = true;
     setResultOpen(true);
+
     if (resultTimerRef.current) {
       clearTimeout(resultTimerRef.current);
       resultTimerRef.current = null;
+    }
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
     }
   };
 
@@ -225,7 +236,7 @@ export default function SimpleAROverlay({
       return ghost;
     }
 
-    // gps-fixed: ★ 거리와 상관없이 방위/델타 "항상" 계산해서 패널에 표기되게 함
+    // gps-fixed
     if (ghost.type === "gps-fixed" && location) {
       const distance = calculateDistance(
         location.latitude,
@@ -250,7 +261,6 @@ export default function SimpleAROverlay({
         ? angleDelta(ghostBearing, cameraBearing)
         : null;
 
-      // 1) 아직 도착 반경 밖
       if (distance > ARRIVE_RADIUS_M) {
         return {
           ...ghost,
@@ -263,7 +273,6 @@ export default function SimpleAROverlay({
         };
       }
 
-      // 2) 방위 없음
       if (!Number.isFinite(cameraBearing)) {
         return {
           ...ghost,
@@ -276,7 +285,6 @@ export default function SimpleAROverlay({
         };
       }
 
-      // 3) 시야각 밖
       if (delta > CAMERA_FOV_DEG / 2) {
         return {
           ...ghost,
@@ -289,7 +297,6 @@ export default function SimpleAROverlay({
         };
       }
 
-      // 4) 미조준
       if (delta > AIM_TOLERANCE_DEG) {
         return {
           ...ghost,
@@ -302,7 +309,6 @@ export default function SimpleAROverlay({
         };
       }
 
-      // 5) 도착+조준 성공 → 중앙 표시
       const screenX = 50;
       const screenY = 50;
       const sizeScaleRaw = 50 / Math.max(distance, 0.5);
@@ -332,7 +338,7 @@ export default function SimpleAROverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
 
-  // 세션 리셋 + 20초 결과 타이머
+  // 세션 리셋 + 20초 결과 타이머 + 카운트다운 시작
   useEffect(() => {
     if (!isActive) return;
 
@@ -343,13 +349,33 @@ export default function SimpleAROverlay({
     resultShownRef.current = false;
     setChestFx(null);
 
+    // 타임아웃(백업) + 카운트다운
     if (resultTimerRef.current) clearTimeout(resultTimerRef.current);
-    resultTimerRef.current = setTimeout(openResult, 20000);
+    resultTimerRef.current = setTimeout(openResult, COUNTDOWN_SECS * 1000);
+
+    setCountdown(COUNTDOWN_SECS);
+    startTimeRef.current = Date.now();
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      const rem = Math.max(0, COUNTDOWN_SECS - elapsed);
+      setCountdown(rem);
+      if (rem <= 0) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+        // openResult는 타임아웃에서 불리지만, 혹시 모를 드리프트 대비
+        openResult();
+      }
+    }, 300);
 
     return () => {
       if (resultTimerRef.current) {
         clearTimeout(resultTimerRef.current);
         resultTimerRef.current = null;
+      }
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
       }
     };
   }, [isActive]);
@@ -488,7 +514,7 @@ export default function SimpleAROverlay({
     if (chestCooling || chestClaimed) return;
 
     const reward = Math.floor(Math.random() * (3000 - 500 + 1)) + 500;
-    setChestClaimed(true);
+    setChestClaimed(true);         // ▶ 버튼(닫힌 상자) 즉시 사라짐
     setChestPoints(reward);
     onBonusPoints?.(reward);
     haptic(60);
@@ -498,7 +524,7 @@ export default function SimpleAROverlay({
     setChestFx({ id, reward });
     setTimeout(() => setChestFx(null), 1200); // 애니메이션 종료 후 제거
 
-    // 쿨다운(버튼 회색 효과 유지)
+    // 쿨다운(표시안되지만 내부적으로만 유지)
     setChestCooling(true);
     setTimeout(() => setChestCooling(false), 1200);
   };
@@ -507,13 +533,35 @@ export default function SimpleAROverlay({
     <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "#000", zIndex: 9999 }}>
       <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
 
+      {/* ⏳ 카운트다운 */}
+      <div
+        style={{
+          position: "absolute",
+          top: "calc(12px + env(safe-area-inset-top))",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 110,
+          background: "rgba(0,0,0,0.6)",
+          color: "#fff",
+          padding: "6px 12px",
+          borderRadius: 999,
+          fontWeight: 900,
+          fontSize: 14,
+          letterSpacing: 0.5,
+          backdropFilter: "blur(6px)",
+          pointerEvents: "none",
+        }}
+      >
+        ⏳ {countdown}s
+      </div>
+
       {/* iOS 센서 권한 버튼 */}
       {needMotionPerm && (
         <button
           onClick={requestMotionPermissions}
           style={{
             position: "absolute",
-            top: "calc(18px + env(safe-area-inset-top))",
+            top: "calc(44px + env(safe-area-inset-top))",
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 120,
@@ -601,41 +649,43 @@ export default function SimpleAROverlay({
         {processedGhosts.length === 0 && <div>유령이 없습니다.</div>}
       </div>
 
-      {/* ⭐ 보물상자 — 항상 화면에 보임 (하단 중앙) */}
-      <button
-        onClick={handleChestClick}
-        aria-label="Treasure Chest"
-        style={{
-          position: "absolute",
-          left: "50%",
-          bottom: "calc(26px + env(safe-area-inset-bottom))",
-          transform: "translateX(-50%)",
-          width: 72,
-          height: 72,
-          borderRadius: 16,
-          border: "none",
-          background: "transparent",
-          padding: 0,
-          cursor: (chestCooling || chestClaimed) ? "default" : "pointer",
-          zIndex: 85,
-          pointerEvents: "auto",
-        }}
-        disabled={chestCooling || chestClaimed}
-      >
-        <img
-          src="/box.png"
-          alt="treasure box"
-          draggable="false"
+      {/* ⭐ 보물상자 — 항상 화면에 보임 (하단 중앙)
+          ⛳ 클릭 후에는 chestClaimed=true가 되면서 이 버튼 자체가 사라짐 */}
+      {!chestClaimed && (
+        <button
+          onClick={handleChestClick}
+          aria-label="Treasure Chest"
           style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "contain",
-            filter: (chestCooling || chestClaimed) ? "grayscale(0.5) brightness(0.9)" : "none",
-            animation: (chestCooling || chestClaimed) ? "none" : "chest-bounce 1500ms ease-in-out infinite",
-            userSelect: "none",
+            position: "absolute",
+            left: "50%",
+            bottom: "calc(26px + env(safe-area-inset-bottom))",
+            transform: "translateX(-50%)",
+            width: 72,
+            height: 72,
+            borderRadius: 16,
+            border: "none",
+            background: "transparent",
+            padding: 0,
+            cursor: (chestCooling) ? "default" : "pointer",
+            zIndex: 85,
+            pointerEvents: "auto",
           }}
-        />
-      </button>
+          disabled={chestCooling}
+        >
+          <img
+            src="/box.png"
+            alt="treasure box"
+            draggable="false"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              animation: chestCooling ? "none" : "chest-bounce 1500ms ease-in-out infinite",
+              userSelect: "none",
+            }}
+          />
+        </button>
+      )}
 
       {/* ✅ 상자 오픈 애니메이션 (boxopen.png + 보상 포인트) */}
       {chestFx && (
@@ -643,7 +693,7 @@ export default function SimpleAROverlay({
           style={{
             position: "absolute",
             left: "50%",
-            bottom: "calc(110px + env(safe-area-inset-bottom))",
+            bottom: "calc(26px + 72px + 12px + env(safe-area-inset-bottom))",
             transform: "translateX(-50%)",
             zIndex: 180,
             pointerEvents: "none",
