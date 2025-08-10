@@ -105,7 +105,7 @@ const formatDuration = (totalSec) => {
     : `${m}:${String(s).padStart(2, "0")}`;
 };
 
-const Map3D = () => {
+const Map3D = ({ onExit }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const domMarkerMap = useRef(new Map());
@@ -173,6 +173,13 @@ const Map3D = () => {
 
   const mobileLog = (msg) =>
     console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
+  const handleExit = () => {
+    try {
+      stopLocationTracking();
+    } catch {}
+    if (window.history.length > 1) window.history.back();
+    else window.location.href = "/";
+  };
 
   // rAF throttle
   const scheduleMarkerUpdate = () => {
@@ -836,7 +843,30 @@ const Map3D = () => {
         className="mapbox-container"
         style={{ width: "100%", height: "100%" }}
       />
-
+      {!isWalkMode && (
+        <button
+          onClick={handleExit}
+          aria-label="나가기"
+          style={{
+            position: "absolute",
+            top: "calc(16px + env(safe-area-inset-top))",
+            left: 16,
+            zIndex: 1200,
+            height: 36,
+            padding: "0 12px",
+            borderRadius: 8,
+            border: "none",
+            background: "#ff2d55",
+            color: "#fff",
+            fontWeight: 800,
+            letterSpacing: 0.2,
+            boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
+            cursor: "pointer",
+          }}
+        >
+          나가기
+        </button>
+      )}
       {!isWalkMode && (
         <button
           onClick={handleStart}
@@ -946,7 +976,7 @@ const Map3D = () => {
           >
             <div>⏱ {formatDuration(elapsedSec)}</div>
             <div>🚶 {distanceM} m</div>
-            <div>🗡️ 퇴치 {defeated}</div>
+            <div>🗡️ 잡은 유령 {defeated}</div>
             <div>⭐ 포인트: {points}</div>
           </div>
 
